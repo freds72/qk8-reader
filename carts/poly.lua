@@ -33,74 +33,64 @@ function polyline(v,c)
 end
 
 function tpoly(v)
-	local p0,spans=v[#v],{}
-	local x0,y0,w0=p0.x,p0.y,p0.w
-	local u0,v0=p0.u*w0,p0.v*w0
+	local nv,spans=#v,{}
 	-- ipairs is slower for small arrays
 	for i=1,#v do
-		local p1=v[i]
-		local x1,y1,w1=p1.x,p1.y,p1.w
-		local u1,v1=p1.u*w1,p1.v*w1
-		local _x1,_y1,_w1,_u1,_v1=x1,y1,w1,u1,v1
-		if(y0>y1) x0,y0,x1,y1,w0,w1,u0,v0,u1,v1=x1,y1,x0,y0,w1,w0,u1,v1,u0,v0
+		local p0,p1=v[i%nv+1],v[i]
+		local x0,y0,w0,x1,y1,w1=p0.x>>1,p0.y>>1,p0.w,p1.x>>1,p1.y>>1,p1.w
+		local u0,u1=(16-p0.z/32)*w0,(16-p1.z/32)*w1
+		if(y0>y1) x0,y0,x1,y1,w0,w1,u0,u1=x1,y1,x0,y0,w1,w0,u1,u0
 		local dy=y1-y0
-		local dx,dw,du,dv=(x1-x0)/dy,(w1-w0)/dy,(u1-u0)/dy,(v1-v0)/dy
+		local dx,du,dw=(x1-x0)/dy,(u1-u0)/dy,(w1-w0)/dy
 		local cy0=y0\1+1
-		if(y0<0) x0-=y0*dx w0-=y0*dw u0-=y0*du v0-=y0*dv y0=0 cy0=0
+		if(y0<0) x0-=y0*dx u0-=y0*du w0-=y0*dw y0=0 cy0=0
 		-- sub-pix shift
 		local sy=cy0-y0
 		x0+=sy*dx
-		w0+=sy*dw
 		u0+=sy*du
-		v0+=sy*dv
-		if(y1>127) y1=127
+		w0+=sy*dw
+		if(y1>63) y1=63
 		for y=cy0,y1 do
 			local span=spans[y]
 			if span then
-				-- backup current edge values
-				local b,bu,bv,bw,a,au,av,aw=x0,u0,v0,w0,unpack(span)
-				if(a>b) a,au,av,aw,b,bu,bv,bw=b,bu,bv,bw,unpack(span)
-			 
-				local x0,x1=a\1+1,b\1
-				if(x1>127) x1=127
-				if x0<=x1 then
-					local dab=b-a
-					local dau,dav,daw=(bu-au)/dab,(bv-av)/dab,(bw-aw)/dab
-					-- sub-pix shift
-					local sa=x0-a
-					if(x0<0) au-=x0*dau av-=x0*dav aw-=x0*daw x0=0 sa=0
-					au+=sa*dau
-					av+=sa*dav
-					aw+=sa*daw
-					
-					-- 4-pixel stride deltas
-					dau<<=2
-					dav<<=2
-					daw<<=2
-
-						-- faster but produces edge artifacts
-						-- local du,dv=(bu/bw-au/aw)/dab,(bv/bw-av/aw)/dab
-
-					-- clip right span edge
-					poke(0x5f22,x1+1)
-
-					for x=x0,x1,4 do
-						local u,v=au/aw,av/aw
-						aw+=daw
-						tline(x,y,x+3,y,u,v,((dau-u*daw)>>2)/aw,((dav-v*daw)>>2)/aw)
-						au+=dau
-						av+=dav
-					end
-				end
-			else
-				spans[y]={x0,u0,v0,w0}
+			-- backup current edge values
+			local b,bu,bw,a,au,aw=x0,u0,w0,span.x,span.u,span.w
+			if(a>b) a,au,aw,b,bu,bw=b,bu,bw,span.x,span.u,span.w
+		 
+			local x0,x1=a\1+1,b\1
+			if(x1>127) x1=127
+			if x0<=x1 then
+			 local dab=b-a
+			 local dau,daw=(bu-au)/dab,(bw-aw)/dab
+			 -- sub-pix shift
+			 local sa=x0-a
+			if(x0<0) au-=x0*dau aw-=x0*daw x0=0 sa=0
+			 au+=sa*dau
+			 aw+=sa*daw
+				
+		 -- 4-pixel stride deltas
+			 dau<<=2
+			 daw<<=2  
+				-- faster but produces edge artifacts
+				-- local du,dv=(bu/bw-au/aw)/dab,(bv/bw-av/aw)/dab
+				
+			 -- clip right span edge
+			 poke(0x5f22,x1+1)
+ 			 
+			 for x=x0,x1,4 do
+				 local u=au/aw
+				 aw+=daw
+				 tline(x,y,x+3,y,u,0.5,((dau-u*daw)>>2)/aw,1/8)
+				 au+=dau
+			 end
 			end
-			x0+=dx
-			w0+=dw
-			u0+=du
-			v0+=dv
+		 else
+		 spans[y]={x=x0,u=u0,w=w0}
+		 end
+		 x0+=dx
+		 u0+=du
+		 w0+=dw
 		end
-		x0,y0,w0,u0,v0=_x1,_y1,_w1,_u1,_v1
 	end
 	--[[
 	local v0,v1,v2,v3=
