@@ -227,9 +227,9 @@ function make_cam()
               if(clipcode>0) p=z_poly_clip(8,p)
 
               if #p>2 then
-                polyfill(p,face.color)
-                --tpoly(p)
-                --if(face[2]==0)polyline(p,0)
+                --polyfill(p,face.color)
+                tpoly(p)
+                if(face[2]==0)polyline(p,0)
               end
             end
           end

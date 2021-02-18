@@ -37,7 +37,7 @@ function tpoly(v)
 	-- ipairs is slower for small arrays
 	for i=1,#v do
 		local p0,p1=v[i%nv+1],v[i]
-		local x0,y0,w0,x1,y1,w1=p0.x>>1,p0.y>>1,p0.w,p1.x>>1,p1.y>>1,p1.w
+		local x0,y0,w0,x1,y1,w1=p0.x,p0.y,p0.w,p1.x,p1.y,p1.w
 		local u0,u1=(16-p0.z/32)*w0,(16-p1.z/32)*w1
 		if(y0>y1) x0,y0,x1,y1,w0,w1,u0,u1=x1,y1,x0,y0,w1,w0,u1,u0
 		local dy=y1-y0
@@ -49,7 +49,7 @@ function tpoly(v)
 		x0+=sy*dx
 		u0+=sy*du
 		w0+=sy*dw
-		if(y1>63) y1=63
+		if(y1>127) y1=127
 		for y=cy0,y1 do
 			local span=spans[y]
 			if span then
