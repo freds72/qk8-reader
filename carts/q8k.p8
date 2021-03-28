@@ -232,7 +232,7 @@ function make_cam()
       -- reset
       clip()
     end,
-    draw_faces=function(self,leaves,pfill,outline,portal)
+    draw_faces=function(self,leaves,scale,outline,portal)
       local m1,m2,m3,m4,m5,m6,m7,m8,m9,m10,m11,m12,m13,m14,m15,m16=unpack(self.m)
       local v_cache,f_cache,cx,cy,cz={},{},unpack(self.pos)
       for j,leaf in ipairs(leaves) do
@@ -268,7 +268,7 @@ function make_cam()
               if(clipcode>0) p=z_poly_clip(8,p)
 
               if #p>2 then
-                pfill(p,face.color)
+                polyfill(p,face.color,scale)
                 if(outline and face[2]==0)polyline(p,0x11)
               end
             end
@@ -334,7 +334,9 @@ function poly_uv_clip(plane,v)
     end
 		if d1>0 then
       if d0<=0 then
+        -- push in front of list
         add(out_res,v_uv_lerp(v0,v1,(d0+0x0.01)/(d0-d1)),1)
+        -- add to end
         res[#res+1]=v_uv_lerp(v0,v1,(d0-0x0.01)/(d0-d1)) 
 			end
       res[#res+1]=v1
@@ -577,23 +579,23 @@ function _init()
   -- portal textures
   for i=0,7 do
     for j=0,7 do
-      mset(i,j,i+j*16+128)
+      mset(i,j,i+j*16)
     end
   end
 
   -- portal masks
-  -- draw "portal" shape/color
-  cls()
-  -- mask
-  circfill(31,31,28,0xf)
   local function grab_mask(mask)
     for j=0,63 do
       for i=0,7 do
         local mem=i<<2|j<<6
-        mask[0x1000|mem]=$(0x6000|mem)
+        mask[mem]=$(0x6000|mem)
       end
     end
   end
+  -- draw "portal" shape/color
+  cls()
+  -- mask
+  circfill(31,31,28,0xf)
   grab_mask(_portaloutline_mask)
   cls(0xf)
   circfill(31,31,31,12)
@@ -675,14 +677,18 @@ function _draw()
     fragments={poly_clip(plane,tmp)}
     ]]
   end
-
-  _cam:draw_faces(leaves,mempoly)
+  
+  cls()
+  clip(0,0,64,64)
+  _cam:draw_faces(leaves,1)
+  clip()
+  -- copy screen to sprite sheet
   for k,v in pairs(_portaloutline) do
-    poke4(k,v|($k&_portaloutline_mask[k]))
+    poke4(k,v|$(0x6000|k)&_portaloutline_mask[k])
   end
   fillp(0xa5a5)
   palt(15,true)
-  _cam:draw_faces(leaves,polyfill,true,true)
+  _cam:draw_faces(leaves,0,true,true)
   fillp()
 
   --if(h) _cam:draw_points(hits)
