@@ -1,25 +1,92 @@
 -- plain color polygon rasterization
-function polyfill(v,c,shift)	
+-- plain color polygon rasterization
+-- credits: 
+function polyfill(p,c)
 	color(c)
-	shift=shift or 0
-	local nv,maxy,spans=#v,(128>>shift)-1,{}
-	-- ipairs is slower for small arrays
-	for i,p1 in pairs(v) do
-		local p0=v[i%nv+1]
-		local x0,y0,x1,y1=p0.x>>shift,p0.y>>shift,p1.x>>shift,p1.y>>shift
-		if(y0>y1) x0,y0,x1,y1=x1,y1,x0,y0
-		local cy0,dx=y0\1+1,(x1-x0)/(y1-y0)
-		if(y0<0) x0-=y0*dx y0=0 cy0=0
-		-- sub-pix shift
-		x0+=(cy0-y0)*dx
-		if(y1>maxy) y1=maxy
-		for y=cy0,y1 do
-			if spans[y] then
-				rectfill(x0,y,spans[y],y)
-			else
-				spans[y]=x0
+	local miny,maxy,minx,maxx,mini,minix=32000,-32000,32000,-32000
+	-- find extent
+	for i,v in pairs(p) do
+		local x,y=v.x,v.y
+		if (x<minx) minix,minx=i,x
+		if (x>maxx) maxx=x
+		if (y<miny) mini,miny=i,y
+		if (y>maxy) maxy=y
+	end
+
+	-- find smallest iteration area
+	if abs(minx-maxx)<abs(miny-maxy) then
+		--data for left and right edges:
+		local np,li,lj,ri,rj,lx,rx,ly,ldy,ry,rdy=#p,minix,minix,minix,minix,minx-1,minx-1
+
+		--step through scanlines.
+		for x=max(0,1+minx&-1),min(maxx,127) do
+			--maybe update to next vert
+			while lx<x do
+				li=lj
+				lj+=1
+				if (lj>np) lj=1
+				local v0,v1=p[li],p[lj]
+				local x0,x1=v0.x,v1.x
+				lx=x1&-1
+				ly=v0.y
+				ldy=(v1.y-ly)/(x1-x0)
+				--sub-pixel correction
+				ly+=(x-x0)*ldy
+			end   
+			while rx<x do
+				ri=rj
+				rj-=1
+				if (rj<1) rj=np
+				local v0,v1=p[ri],p[rj]
+				local x0,x1=v0.x,v1.x
+				rx=x1&-1
+				ry=v0.y
+				rdy=(v1.y-ry)/(x1-x0)
+				--sub-pixel correction
+				ry+=(x-x0)*rdy
 			end
-			x0+=dx
+			rectfill(x,ly,x,ry)
+			--pset(x,ly,0)
+			--pset(x,ry,0)
+			ly+=ldy
+			ry+=rdy
+		end
+	else
+		--data for left & right edges:
+		local np,li,lj,ri,rj,ly,ry,lx,ldx,rx,rdx=#p,mini,mini,mini,mini,miny-1,miny-1
+
+		--step through scanlines.
+		for y=max(0,1+miny&-1),min(maxy,127) do
+			--maybe update to next vert
+			while ly<y do
+				li=lj
+				lj+=1
+				if (lj>np) lj=1
+				local v0,v1=p[li],p[lj]
+				local y0,y1=v0.y,v1.y
+				ly=y1&-1
+				lx=v0.x
+				ldx=(v1.x-lx)/(y1-y0)
+				--sub-pixel correction
+				lx+=(y-y0)*ldx
+			end   
+			while ry<y do
+				ri=rj
+				rj-=1
+				if (rj<1) rj=np
+				local v0,v1=p[ri],p[rj]
+				local y0,y1=v0.y,v1.y
+				ry=y1&-1
+				rx=v0.x
+				rdx=(v1.x-rx)/(y1-y0)
+				--sub-pixel correction
+				rx+=(y-y0)*rdx
+			end
+			rectfill(lx,y,rx,y)
+			--pset(lx,y,0)
+			--pset(rx,y,0)
+			lx+=ldx
+			rx+=rdx
 		end
 	end
 end
@@ -42,7 +109,7 @@ function tpoly(v)
 		local u0,v0,u1,v1=p0.u*w0,p0.v*w0,p1.u*w1,p1.v*w1
 		if(y0>y1) x0,y0,x1,y1,w0,w1,u0,v0,u1,v1=x1,y1,x0,y0,w1,w0,u1,v1,u0,v0
 		local dy=y1-y0
-		local cy0,dx,dw,du,dv=y0\1+1,(x1-x0)/dy,(w1-w0)/dy,(u1-u0)/dy,(v1-v0)/dy
+		local cy0,dx,dw,du,dv=(y0&-1)+1,(x1-x0)/dy,(w1-w0)/dy,(u1-u0)/dy,(v1-v0)/dy
 		if(y0<0) x0-=y0*dx w0-=y0*dw u0-=y0*du v0-=y0*dv y0=0 cy0=0
 		-- sub-pix shift
 		local sy=cy0-y0
@@ -58,7 +125,7 @@ function tpoly(v)
 				local b,bu,bv,bw,a,au,av,aw=x0,u0,v0,w0,span.x,span.u,span.v,span.w
 				if(a>b) a,au,av,aw,b,bu,bv,bw=b,bu,bv,bw,span.x,span.u,span.v,span.w
 			 
-				local x0,x1=a\1+1,b\1
+				local x0,x1=(a&-1)+1,b&-1
 				if(x1>127) x1=127
 				if x0<=x1 then
 					local dab=b-a
