@@ -273,7 +273,7 @@ function make_cam(name)
           local fi=leaf[i]  
           -- some sectors are sharing faces
           -- make sure a face from a leaf is drawn only once
-          if not f_cache[fi] and plane_dot(faces[fi],pos)<faces[fi+1]!=faces[fi+2] then            
+          if not faces[fi+4] and not f_cache[fi] and plane_dot(faces[fi],pos)<faces[fi+1]!=faces[fi+2] then            
             f_cache[fi]=true
             
             local p,outcode,clipcode,edges,vi_base={},0xffff,0,faces[fi+5]
@@ -306,7 +306,7 @@ function make_cam(name)
               if(clipcode>0) p=z_poly_clip(8,p)
 
               if #p>2 then
-                polyfill(p,faces[fi+3])
+                polyfill(p,i)
               end
             end
           end
@@ -381,7 +381,7 @@ function make_player(pos,a)
       angle=v_add(angle,dangle,1/1024)
     
       local c,s=cos(a),-sin(a)
-      velocity=v_add(velocity,{s*dz-c*dx,jmp-2,c*dz+s*dx})          
+      velocity=v_add(velocity,{s*dz-c*dx,jmp,c*dz+s*dx})          
       -- check next position
       local vn,vl=v_normz(velocity)
       wall_run=false

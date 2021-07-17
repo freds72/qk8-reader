@@ -119,7 +119,7 @@ function polyfill(p,c)
 	end
 end
 
-function polyfill(p,c)
+function polyfill2(p,c)
 	if(c==0xcc)	return
 	color(c)
 	local nv,spans=#p,{}
