@@ -46,7 +46,7 @@ function polyfill(p,c)
 	end
 end
 
-function polytex_ymajor(v,uvs,slope)
+function polytex_ymajor(v,uvs,slope,out,mi)
 
  local n,nodes,offset=#v,{},(slope<<7)&-1
  for i,p1 in pairs(v) do
@@ -79,9 +79,10 @@ function polytex_ymajor(v,uvs,slope)
 				local x0,u0,v0,x1,u1,v1=x0,u0/w0,v0/w0,span[1],span[2],span[3]
 				if(x0>x1) x0,x1,u0,v0,u1,v1=x1,x0,u1,v1,u0,v0
 				local ddx=((x1+0x1.ffff)&-1)-(x0&-1)
-				clip(x0,0,ddx,127)		
+				--clip(x0,0,ddx,127)		
 				local ddu,ddv=(u1-u0)/ddx,(v1-v0)/ddx
-				tline(0,y,127,y+offset,u0-x0*ddu,v0-x0*ddv,ddu,ddv)
+				--tline(0,y,127,y+offset,u0-x0*ddu,v0-x0*ddv,ddu,ddv)
+				add(out,{key=w0<<5,x0,0,ddx,127,0,y,127,y+offset,u0-x0*ddu,v0-x0*ddv,ddu,ddv,mi})
 	  else
 	   nodes[y]={x0,u0/w0,v0/w0}
 	  end
@@ -91,10 +92,10 @@ function polytex_ymajor(v,uvs,slope)
 			v0+=dv
   end
  end
-	clip()
+	
 end
 
-function polytex_xmajor(v,uvs,slope)
+function polytex_xmajor(v,uvs,slope,out,mi)
  local n,nodes,offset=#v,{},(slope<<7)&-1
 
 	for i,p1 in pairs(v) do
@@ -129,11 +130,11 @@ function polytex_xmajor(v,uvs,slope)
 				local y0,u0,v0,y1,u1,v1=y0,u0/w0,v0/w0,span[1],span[2],span[3]
 				if(y0>y1) y0,y1,u0,v0,u1,v1=y1,y0,u1,v1,u0,v0
 				local ddy=((y1+0x1.ffff)&-1)-(y0&-1)
-				clip(0,y0,127,ddy)
-				-- line(x,0,x+offset,128)
-				--rectfill(x,y0,x,span,8)
+				--clip(0,y0,127,ddy)
 				local ddu,ddv=(u1-u0)/ddy,(v1-v0)/ddy
-				tline(x,0,x+offset,127,u0-y0*ddu,v0-y0*ddv,ddu,ddv)
+				--tline(x,0,x+offset,127,u0-y0*ddu,v0-y0*ddv,ddu,ddv)				
+				
+				add(out,{key=w0<<5,0,y0,127,ddy,x,0,x+offset,127,u0-y0*ddu,v0-y0*ddv,ddu,ddv,mi})
 	  else
 	   nodes[x]={y0,u0/w0,v0/w0}
 	  end
@@ -143,5 +144,5 @@ function polytex_xmajor(v,uvs,slope)
 			v0+=dv
   end
  end
-	clip()
+	
 end

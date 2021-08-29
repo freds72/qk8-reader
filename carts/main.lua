@@ -136,28 +136,39 @@ function make_m_from_v_angle(up,angle)
 	}
 end
 
+-- radix
+-- from james edge
+function rsort(buffer1,_len,_digits,_base)
+  local buffer2, idx, count, exp = {}, {}, {}, 1
+
+  for i=0,1 do
+    for i=0,31 do count[i] = 0 end
+
+    for i,b in pairs(buffer1) do
+      local k=(b.key\exp)&31
+      idx[i] = k
+      count[k] += 1
+    end
+
+    for i=1,31 do count[i] += count[i-1] end
+
+    for i=_len,1,-1 do
+      local k=idx[i]
+      buffer2[count[k]] = buffer1[i]
+      count[k] -= 1
+    end
+
+    buffer1, buffer2 = buffer2, buffer1
+
+    exp <<= 5
+  end
+end
+
+
+-- cam
 function make_cam()
   local up={0,1,0}
-  local visleaves,visframe,prev_leaf={},0
-
-  -- traverse bsp
-  local function collect_child(node,side,pos)
-    local child=node[side]
-    if child and child.visframe==visframe then
-      if child.contents then
-        visleaves[#visleaves+1]=child
-      else
-        collect_bsp(child,pos)
-      end
-    end
-  end
-  -- unrolled true/false children traversing for performance
-  function collect_bsp(node,pos)
-    local side=plane_isfront(node.plane,pos)
-    collect_child(node,not side,pos)
-    collect_child(node,side,pos)
-  end
-
+  local visleaves,prev_leaf={}
 	return {
 		pos={0,0,0},    
 		track=function(self,pos,m)
@@ -181,36 +192,27 @@ function make_cam()
       -- changed sector?
       if current_leaf and current_leaf!=prev_leaf then
         prev_leaf=current_leaf
-        visframe+=1
+        visleaves={}
         -- find all visible leaves
         local vis_mask=_vis_mask
         for i,bits in pairs(current_leaf.pvs) do
           for j,mask in pairs(vis_mask) do
             -- visible?
-            if bits&mask!=0 then
-              local leaf=all_leaves[(i<<5|j)+2]
-              -- tag visible parents
-              while leaf do
-                -- already tagged?
-                if(leaf.visframe==visframe) break
-                leaf.visframe=visframe
-                leaf=leaf.parent
-              end
+            if bits&mask!=0 then              
+              add(visleaves,all_leaves[(i<<5|j)+2])
             end
           end
         end    
       end
-      -- collect convex spaces back to front
-      visleaves={}
-      collect_bsp(bsp,self.pos)
       return visleaves
     end,  
     draw_faces=function(self,verts,faces,leaves)
       local m1,m2,m3,m4,m5,m6,m7,m8,m9,m10,m11,m12,m13,m14,m15,m16=unpack(self.m)
       local cam_u,cam_v={m1,m5,m9},{m2,m6,m10}
       local v_cache,f_cache,pos={},{},self.pos
-      
-      for j,leaf in ipairs(leaves) do
+      local zbuffer={}
+
+      for j,leaf in pairs(leaves) do
         -- faces form a convex space, render in any order        
         for i=1,leaf.nf do
           -- face index
@@ -265,10 +267,6 @@ function make_cam()
                     local u,v=sin(a),cos(a)
                     -- copy texture to hw map
                     local mi=faces[fi+7]
-                    local stride=_maps[mi]
-                    for dst,src in pairs(_maps[mi+1]) do
-                      poke4(dst,peek4(src,stride))
-                    end
                     -- texture coords
                     -- printh(tostr(_maps[mi],true))
                     -- poke4(0x5f38,_maps[mi])
@@ -288,12 +286,12 @@ function make_cam()
                     -- end
 
                     if abs(u)>abs(v) then
-                      polytex_ymajor(p,uvs,v/u)
+                      polytex_ymajor(p,uvs,v/u,zbuffer,mi)
                     else
-                      polytex_xmajor(p,uvs,u/v)
+                      polytex_xmajor(p,uvs,u/v,zbuffer,mi)
                     end                   
                   else
-                    polyfill(p,0)
+                    --polyfill(p,0)
                   end
                 end
               end
@@ -305,6 +303,23 @@ function make_cam()
           thing:draw(self.m)
         end        
       end
+      rsort(zbuffer,#zbuffer)
+      local prev_mi
+      for i=1,#zbuffer do
+        local cmd=zbuffer[i]
+        local mi=cmd[13]
+        -- enable texture (if not already done)
+        if mi!=prev_mi then
+          local stride=_maps[mi]
+          for dst,src in pairs(_maps[mi+1]) do
+            poke4(dst,peek4(src,stride))
+          end
+          prev_mi=mi
+        end
+        clip(cmd[1],cmd[2],cmd[3],cmd[4])
+        tline(cmd[5],cmd[6],cmd[7],cmd[8],cmd[9],cmd[10],cmd[11],cmd[12])
+      end
+      clip()      
     end
   }
 end
@@ -700,7 +715,6 @@ function hitscan(node,p0,p1,out)
   return hit or otherhit
 end
 
-
 function _init()
   -- enable tile 0 + extended memory
   poke(0x5f36, 0x18)
@@ -775,10 +789,6 @@ function unpack_array(fn,name)
   if(name) printh(name..":"..stat(0)-mem0.."kb")
 end
 
-function unpack_chr()
-  return chr(mpeek())
-end
-
 -- reference
 function unpack_ref(a)
   local n=unpack_variant()
@@ -790,6 +800,49 @@ end
 -- 3d vertex
 function unpack_v3()
   return {unpack_fixed(),unpack_fixed(),unpack_fixed()}
+end
+
+-- valid chars for model names
+function unpack_string()
+	local s=""
+	unpack_array(function()
+		s..=chr(mpeek())
+	end)
+	return s
+end
+
+-- 3d
+function unpack_models(ramps)
+    -- for all models
+	unpack_array(function()
+      local verts,faces={},{}
+      local model,name={v=verts,f=faces},unpack_string()
+      printh("decoding:"..name)
+
+      -- vertices
+      unpack_array(function()
+        add(verts,unpack_v3())
+      end)
+      -- faces
+      unpack_array(function()
+        local flags,f=mpeek(),{ramp=ramps[mpeek()]}					
+
+        -- quad?
+        f.ni=(flags&0x1!=0) and 4 or 3
+
+        -- vertex indices
+        for i=1,f.ni do
+          -- direct reference to vertex
+          f[i]=unpack_ref(verts)
+        end
+        -- normal
+        f.n=unpack_v3()
+        -- n.p cache
+        f.cp=v_dot(f.n,f[1])
+      end)
+    -- index by name
+    _models[name]=model
+  end)
 end
 
 function unpack_map()
