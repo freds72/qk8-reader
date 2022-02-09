@@ -550,8 +550,8 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
             total_light += color.hw
             shaded_tex.append(color.id)
         # baselight = 0xff (makes no sense = full dark)
-        if tex_name != "*lava":
-          baselight = 0
+        # if tex_name != "*lava":
+        #  baselight = 0
         # todo: find another way...        
       # full dark?
       if total_light>0 and baselight>0:

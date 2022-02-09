@@ -161,5 +161,9 @@ class ColormapReader():
       for color_index in range(16):
         ramp = colormap[color_index].ramp
         blob += pack_byte(colormap[ramp[ramp_index]].hw)
+    for ramp_index in range(16):
+      for color_index in range(16):
+        ramp = colormap[color_index].ramp
+        blob += pack_byte(ramp[ramp_index])
     return blob
 
