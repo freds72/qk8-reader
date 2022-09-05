@@ -281,7 +281,7 @@ function make_cam()
 
           -- znear=8
           if az<8 then code=2 end
-          if az>256 then code|=1 end
+          --if az>256 then code|=1 end
           if ax>az then code|=4
           elseif ax<-az then code|=8 end
           if ay>az then code|=16
@@ -513,13 +513,14 @@ function z_poly_clip(v,nv,uvs)
 	local res,v0={},v[nv]
 	local d0=v0[3]-8
 	for i=1,nv do
-    if d0>0 then
+    local side=d0>0
+    if side then
       res[#res+1]=v0
     end
 		local v1=v[i]
 		local d1=v1[3]-8
     -- not same sign?
-		if (d1>0)!=(d0>0) then
+		if (d1>0)!=side then
       local nv=v_lerp(v0,v1,d0/(d0-d1),uvs)
       -- project against near plane
       nv.x=63.5+(nv[1]<<3)
@@ -727,8 +728,8 @@ function is_empty(node,pos)
   while node.contents==nil or node.contents>0 do
     node=node[plane_isfront(node.plane,pos)]
   end  
-  --return node.contents!=-1
-  return node.contents!=-2 or node.contents!=-1
+  return node.contents!=-1
+  --return node.contents!=-2 or node.contents!=-1
 end
 
 -- detach a thing from a convex sector (leaf)
@@ -864,7 +865,7 @@ function _update()
 end
 
 function _draw()
-  cls()
+  cls(1)
   
   --[[
   local door=_bsps[2]
@@ -997,18 +998,18 @@ function unpack_map()
     return planes[pi],planes[pi+1],planes[pi+2]
   end
   plane_dot=function(pi,v)
-    local t=planes[pi+4]
+    local t,d=planes[pi+4],planes[pi+3]
     if t<3 then    
-      return planes[pi+t]*v[t+1],planes[pi+3]
+      return planes[pi+t]*v[t+1],d
     end
-    return planes[pi]*v[1]+planes[pi+1]*v[2]+planes[pi+2]*v[3],planes[pi+3]
+    return planes[pi]*v[1]+planes[pi+1]*v[2]+planes[pi+2]*v[3],d
   end
   plane_isfront=function(pi,v)
-    local t=planes[pi+4]
+    local t,d=planes[pi+4],planes[pi+3]
     if t<3 then
-      return planes[pi+t]*v[t+1]>planes[pi+3]
+      return planes[pi+t]*v[t+1]>d
     end
-    return planes[pi]*v[1]+planes[pi+1]*v[2]+planes[pi+2]*v[3]>planes[pi+3]
+    return planes[pi]*v[1]+planes[pi+1]*v[2]+planes[pi+2]*v[3]>d
   end
 
   unpack_array(function()  
@@ -1223,7 +1224,8 @@ function unpack_map()
         -- normal
         f.n=unpack_vert()
         -- n.p cache
-        f.cp=v_dot(f.n,{verts[base],verts[base+1],verts[base+1]})
+        local base=f[1]
+        f.cp=v_dot(f.n,{verts[base],verts[base+1],verts[base+2]})
       end)
     -- index by name
     _models[i]=model
