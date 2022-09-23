@@ -298,6 +298,7 @@ function make_cam()
       local m=self.m
       local pts,cam_u,cam_v,v_cache,f_cache,fu_cache,fv_cache,cam_pos={},{m[1],m[5],m[9]},{m[2],m[6],m[10]},setmetatable({m=m,v=v_unpack},v_cache_class),{},{},{},self.pos
       
+      local flick,pal0=time()%2<0.5*rnd()+0.5
       for j=lstart,lend do
         local leaf=leaves[j]
         -- faces form a convex space, render in any order        
@@ -306,6 +307,7 @@ function make_cam()
           local fi=leaf[i]            
           -- face normal          
           local fn,flags=faces[fi],faces[fi+2]
+          -- skip skies
           if flags&0x4==0 then
             -- some sectors are sharing faces
             -- make sure a face from a leaf is drawn only once
@@ -330,16 +332,14 @@ function make_cam()
                 -- still a valid polygon?
                 if np>2 then
                   if uvi!=-1 then
-                    local u,v=fu_cache[fn],fv_cache[fn]
-                    if not u then
-                      -- not needed (we take abs u)
-                      -- if(side) s,t=-s,-t
-                      local a=atan2(plane_dot(fn,cam_u),plane_dot(fn,cam_v))
-                      -- normalized 2d vector
-                      u,v=sin(a),cos(a)
-                      fu_cache[fn]=u
-                      fv_cache[fn]=v
+                    -- color ramp
+                    local pal1=faces[fi+4]
+                    if pal1==10 and flick then
+                      pal1=4
+                    else
+                      pal1=8
                     end
+                    if(pal0!=pal1) memcpy(0x5f00,0x4400|pal1<<4,16) pal0=pal1
 
                     -- activate texture
                     local mi=faces[fi+6]
@@ -357,6 +357,16 @@ function make_cam()
                       poke4(0x5f38,0)
                       poke4(0x2000,unpack(_maps[mi+1]))                  
                     end
+                    local u,v=fu_cache[fn],fv_cache[fn]
+                    if not u then
+                      -- not needed (we take abs u)
+                      -- if(side) s,t=-s,-t
+                      local a=atan2(plane_dot(fn,cam_u),plane_dot(fn,cam_v))
+                      -- normalized 2d vector
+                      u,v=sin(a),cos(a)
+                      fu_cache[fn]=u
+                      fv_cache[fn]=v
+                    end
 
                     local umask,vmask=u>>31,v>>31                    
                     if u^^umask>v^^vmask then
@@ -367,9 +377,9 @@ function make_cam()
                   else
                     -- sky?
                     polyfill(pts,np,0)
-                    --polyline(pts,np,1)
+                    -- polyline(pts,np,1)
                     --polyfill(pts,np,0)
-                  end
+                  end                  
                 end
               end
             end
@@ -861,11 +871,21 @@ function _update()
     p:update()
   end
 
-  _cam:track(v_add(_plyr.pos,{0,8,0}),_plyr.m,_plyr.angle)
+  _cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
+end
+
+function padding(n)
+	n=tostr(min(n,99)\1)
+	return sub("00",1,2-#n)..n
+end
+
+function time_tostr(t)
+	-- note: assume minutes doesn't go > 9
+	return (t\1800).."'"..padding((t\30)%60).."''"..padding(flr(10*t/3)%100)
 end
 
 function _draw()
-  cls(1)
+  cls(0)
   
   --[[
   local door=_bsps[2]
@@ -909,14 +929,11 @@ function _draw()
   local visleaves=_cam:collect_leaves(_model.bsp,_leaves)
   _cam:draw_faces(_model.verts,_model.faces,visleaves,1,#visleaves,out)
 
-  local s=(flr(1000*stat(1))/10).."%\n"..(stat(0)\1).."kB\nleaves:"..#visleaves
+  local s=flr(100*stat(1)).."%\n"..(stat(0)\1).."kB"
   print(s,2,3,1)
   print(s,2,2,12)
 
   if(_msg) print(_msg,64-2*#_msg,80,4)
-  
-  pset(64,64,15)  
-
   -- set screen palette (color ramp 8 is neutral)
   memcpy(0x5f10,0x4300+16*8,16)
 end
@@ -1194,7 +1211,6 @@ function unpack_map()
 	unpack_array(function(i)
       local faces={}
       local model={f=faces}
-      printh("decoding model id:"..i)
 
       -- vertices
       local base=#verts+1

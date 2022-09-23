@@ -439,7 +439,7 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
       face_verts.append(edge.v[1])   
 
   # face light
-  baselight = face.styles[1]
+  baselight = 0 #face.styles[1]
   mapid = -1
 
   # face color match
@@ -485,7 +485,12 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
       shaded_tex = []
       is_texture = True
       tex_width, tex_height = mip.width, mip.height
-      tex_name = mip.name    
+      tex_name = mip.name        
+      active_lights={}
+      for i in range(64):
+        active_lights[i]=1
+
+      # print(f"{tex_name} : {face.styles[0]} => {baselight}")
       # debug - dump lightmap
       if face.lightofs!=-1:   
         # scale 8  -> 8x8 pixels per lexel
@@ -499,13 +504,34 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
 
         # draw = ImageDraw.Draw(img) 
         # logging.info("lightmap {}x{} @{}/{} - texmap: {}x{} pixels".format(lightmap_width,lightmap_height,face.lightofs,len(lightmaps), tex_width, tex_height))
+
+        # compile all lightmaps into 1
+        lightmap_size = lightmap_width * lightmap_height
+        lightmap = [0] * lightmap_size
+        
         for y in range(lightmap_height):
-          for x in range(lightmap_width):
-            lexel = face.lightofs+x+y*lightmap_width
+          for x in range(lightmap_width):            
+            lexel = face.lightofs + x + y*lightmap_width
             # light = int((lightmaps[lexel]))
             # if block:
             #   lightmaps_img.putpixel((blockx+x,blocky+y),(light,light,light))
-            light = (lightmaps[lexel]) // 16
+            # adjust light range to gradient size (16)
+            for i in range(2):
+              light_id = face.styles[i]          
+              if light_id in active_lights:
+                scale = active_lights[light_id]
+                if scale>0:
+                  lumen = lightmaps[lexel + i*lightmap_size]
+                  lightmap[x + y*lightmap_width] += scale * lumen
+
+        for y in range(lightmap_height):
+          for x in range(lightmap_width):
+            lexel = x+y*lightmap_width
+            # light = int((lightmaps[lexel]))
+            # if block:
+            #   lightmaps_img.putpixel((blockx+x,blocky+y),(light,light,light))
+            # adjust light range to gradient size (16)
+            light = int(min(lightmap[lexel]/2,255) // 16)
             # shade = colormap[min(colormap[3].ramp[light],15)]
             # total_light += shade.hw
             # for u in range(texel):
@@ -537,7 +563,7 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
         # "kill" baselight (if mixed with lightmap)
         baselight = 11
         is_texture = False
-      #elif tex_name == "*lava":
+      # elif tex_name == "*lava":
       elif color_re.match(tex_name):
         # decode color
         baselight = [index for index,c in colormap.items() if int(tex_name[4:6],16)==c.hw][0]
@@ -550,8 +576,8 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
             total_light += color.hw
             shaded_tex.append(color.id)
         # baselight = 0xff (makes no sense = full dark)
-        # if tex_name != "*lava":
-        #  baselight = 0
+        if tex_name[0] == "*":
+          baselight = 11
         # todo: find another way...        
       # full dark?
       if total_light>0 and baselight>0:
@@ -573,7 +599,7 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
     s += pack_variant(vi)
 
   # color  
-  s += pack_byte(baselight)
+  s += pack_byte(min([i for i in face.styles if i>0]))
 
   # textured?
   if mapid!=-1:

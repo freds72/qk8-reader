@@ -1,4 +1,4 @@
-# Generated from FGD.g4 by ANTLR 4.10.1
+# Generated from FGD.g4 by ANTLR 4.11.1
 # encoding: utf-8
 from antlr4 import *
 from io import StringIO
@@ -128,7 +128,7 @@ class FGDParser ( Parser ):
 
     def __init__(self, input:TokenStream, output:TextIO = sys.stdout):
         super().__init__(input, output)
-        self.checkVersion("4.10.1")
+        self.checkVersion("4.11.1")
         self._interp = ParserATNSimulator(self, self.atn, self.decisionsToDFA, self.sharedContextCache)
         self._predicates = None
 
@@ -182,7 +182,7 @@ class FGDParser ( Parser ):
             self.state = 35
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la==FGDParser.T__0:
+            while _la==1:
                 self.state = 32
                 self.classdef()
                 self.state = 37
@@ -264,7 +264,7 @@ class FGDParser ( Parser ):
             self.state = 45
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la==FGDParser.KEYWORD:
+            while _la==14:
                 self.state = 42
                 self.classattribute()
                 self.state = 47
@@ -278,7 +278,7 @@ class FGDParser ( Parser ):
             self.state = 52
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la==FGDParser.T__2:
+            if _la==3:
                 self.state = 50
                 self.match(FGDParser.T__2)
                 self.state = 51
@@ -414,7 +414,7 @@ class FGDParser ( Parser ):
                 self.state = 65
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                while _la==FGDParser.T__4:
+                while _la==5:
                     self.state = 61
                     self.match(FGDParser.T__4)
                     self.state = 62
@@ -431,7 +431,7 @@ class FGDParser ( Parser ):
                 self.state = 73
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                while _la==FGDParser.T__4:
+                while _la==5:
                     self.state = 69
                     self.match(FGDParser.T__4)
                     self.state = 70
@@ -448,7 +448,7 @@ class FGDParser ( Parser ):
                 self.state = 80
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                while _la==FGDParser.QUOTED_STRING:
+                while _la==13:
                     self.state = 77
                     self.untypedproperty()
                     self.state = 82
@@ -516,7 +516,7 @@ class FGDParser ( Parser ):
             self.enterOuterAlt(localctx, 1)
             self.state = 88
             _la = self._input.LA(1)
-            if not((((_la) & ~0x3f) == 0 and ((1 << _la) & ((1 << FGDParser.NUMBER) | (1 << FGDParser.QUOTED_STRING) | (1 << FGDParser.KEYWORD))) != 0)):
+            if not(((_la) & ~0x3f) == 0 and ((1 << _la) & 28672) != 0):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)
@@ -676,7 +676,7 @@ class FGDParser ( Parser ):
             self.state = 101
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la==FGDParser.T__8:
+            while _la==9:
                 self.state = 97
                 self.match(FGDParser.T__8)
                 self.state = 98
@@ -740,7 +740,7 @@ class FGDParser ( Parser ):
             self.state = 108
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la==FGDParser.KEYWORD:
+            while _la==14:
                 self.state = 105
                 self.typedproperty()
                 self.state = 110
@@ -909,7 +909,7 @@ class FGDParser ( Parser ):
             self.state = 142
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            if _la==FGDParser.T__1:
+            if _la==2:
                 self.state = 133
                 self.match(FGDParser.T__1)
                 self.state = 134
@@ -917,7 +917,7 @@ class FGDParser ( Parser ):
                 self.state = 138
                 self._errHandler.sync(self)
                 _la = self._input.LA(1)
-                while _la==FGDParser.NUMBER or _la==FGDParser.QUOTED_STRING:
+                while _la==12 or _la==13:
                     self.state = 135
                     self.option()
                     self.state = 140
@@ -1160,7 +1160,7 @@ class FGDParser ( Parser ):
             self.enterOuterAlt(localctx, 1)
             self.state = 161
             _la = self._input.LA(1)
-            if not(_la==FGDParser.NUMBER or _la==FGDParser.QUOTED_STRING):
+            if not(_la==12 or _la==13):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)
@@ -1216,7 +1216,7 @@ class FGDParser ( Parser ):
             self.enterOuterAlt(localctx, 1)
             self.state = 163
             _la = self._input.LA(1)
-            if not(_la==FGDParser.NUMBER or _la==FGDParser.QUOTED_STRING):
+            if not(_la==12 or _la==13):
                 self._errHandler.recoverInline(self)
             else:
                 self._errHandler.reportMatch(self)

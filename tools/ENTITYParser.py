@@ -1,4 +1,4 @@
-# Generated from ENTITY.g4 by ANTLR 4.10.1
+# Generated from ENTITY.g4 by ANTLR 4.11.1
 # encoding: utf-8
 from antlr4 import *
 from io import StringIO
@@ -55,7 +55,7 @@ class ENTITYParser ( Parser ):
 
     def __init__(self, input:TokenStream, output:TextIO = sys.stdout):
         super().__init__(input, output)
-        self.checkVersion("4.10.1")
+        self.checkVersion("4.11.1")
         self._interp = ParserATNSimulator(self, self.atn, self.decisionsToDFA, self.sharedContextCache)
         self._predicates = None
 
@@ -109,7 +109,7 @@ class ENTITYParser ( Parser ):
             self.state = 13
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la==ENTITYParser.T__0:
+            while _la==1:
                 self.state = 10
                 self.block()
                 self.state = 15
@@ -173,7 +173,7 @@ class ENTITYParser ( Parser ):
             self.state = 22
             self._errHandler.sync(self)
             _la = self._input.LA(1)
-            while _la==ENTITYParser.QUOTED_STRING:
+            while _la==3:
                 self.state = 19
                 self.pair()
                 self.state = 24

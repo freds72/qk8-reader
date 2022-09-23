@@ -63,7 +63,7 @@ function polytex_ymajor(v,n,slope)
 		local sy=cy0-y0
 		if(offset>0) then
 			local ymin=y0+offset
-			if(ymin<0) x0-=ymin*dx w0-=ymin*dw u0-=ymin*du v0-=ymin*dv cy0=-offset sy=0
+			if(ymin<0) x0-=ymin*dx w0-=ymin*dw u0-=ymin*du v0-=ymin*dv cy0=-offset sy=0 
 			if(y1>127) y1=127
 		else
 			if(y0<0) x0-=y0*dx w0-=y0*dw u0-=y0*du v0-=y0*dv cy0=0 sy=0
@@ -74,16 +74,14 @@ function polytex_ymajor(v,n,slope)
 		u0+=sy*du
 		v0+=sy*dv
 			
-		local pal0
 		for y=cy0,y1 do
 			local x1=nodes_x[y]
 			if x1 then
 				local x0,u0,v0,u1,v1=x0,u0/w0,v0/w0,nodes_u[y],nodes_v[y]
 				if(x0>x1) x0,x1,u0,v0,u1,v1=x1,x0,u1,v1,u0,v0
-				local ddx,pal1=((x1+0x1.ffff)&-1)-(x0&-1),min(w0\0.0666,7)
+				local ddx=((x1+0x1.ffff)&-1)-(x0&-1)
 				clip(x0+1,0,ddx,128)		
-				local ddu,ddv=(u1-u0)/ddx,(v1-v0)/ddx
-				if(pal0!=pal1) memcpy(0x5f00,0x4400|pal1<<4,16) pal0=pal1
+				local ddu,ddv=(u1-u0)/ddx,(v1-v0)/ddx				
 				tline(0,y,127,y+offset,u0-x0*ddu,v0-x0*ddv,ddu,ddv)
 			else
 				nodes_x[y]=x0
@@ -125,16 +123,14 @@ function polytex_xmajor(v,n,slope)
 		w0+=sx*dw
 		u0+=sx*du
 		v0+=sx*dv
-		local pal0
 		for x=cx0,x1 do
 			local y1=nodes_y[x]
 			if y1 then
 				local y0,u0,v0,u1,v1=y0,u0/w0,v0/w0,nodes_u[x],nodes_v[x]
 				if(y0>y1) y0,y1,u0,v0,u1,v1=y1,y0,u1,v1,u0,v0
-				local ddy,pal1=((y1+0x1.ffff)&-1)-(y0&-1),min(w0\0.0666,7)
+				local ddy=((y1+0x1.ffff)&-1)-(y0&-1)
 				clip(0,y0+1,128,ddy)
 				local ddu,ddv=(u1-u0)/ddy,(v1-v0)/ddy
-				if(pal0!=pal1) memcpy(0x5f00,0x4400|pal1<<4,16) pal0=pal1
 				tline(x,0,x+offset,127,u0-y0*ddu,v0-y0*ddv,ddu,ddv)
 			else
 				nodes_y[x]=y0
@@ -148,12 +144,4 @@ function polytex_xmajor(v,n,slope)
 		end
 	end
 	clip()
-end
-
-function polyline(p,np,c)
-	color(c)
-	for i=1,np do
-		local v0,v1=p[i],p[i%np+1]	
-		line(v0.x,v0.y,v1.x,v1.y)
-	end
 end
