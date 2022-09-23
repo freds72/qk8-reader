@@ -12,11 +12,16 @@ tools/__pycache__
 *.egg-info
 _label.png
 /bin
-/carts/q8k_*.p8
+/carts/q8k*.p8
+/carts/*.bin
 /maps/*.log
 /maps/*.prt
 /maps/*-compile.map
 /maps/autosave
+*.blend1
+/env/
+
+
 
 
 

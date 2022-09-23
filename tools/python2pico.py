@@ -84,11 +84,21 @@ def pack_double(x):
         raise Exception('Unable to convert: {} into a word: {}'.format(x,h))
     return h
 
+def pack_vec3(v, scale=None):
+  scale = scale or 1
+  return pack_fixed(v.x * scale) + pack_fixed(v.y * scale) + pack_fixed(v.z * scale)
+
 # convert a byte array to a pico8 safe char set
 def bytes_to_base255(bs):    
     # safe pico chars
     chars = ["\\0","¹","²","³","⁴","⁵","⁶","⁷","⁸","	","\\n","ᵇ","ᶜ","\\r","ᵉ","ᶠ","▮","■","□","⁙","⁘","‖","◀","▶","「","」","¥","•","、","。","゛","゜"," ","!","\\\"","#","$","%","&","'","(",")","*","+",",","-",".","/","\\48","\\49","\\50","\\51","\\52","\\53","\\54","\\55","\\56","\\57",":",";","<","=",">","?","@","A","B","C","D","E","F","G","H","I","J","K","L","M","N","O","P","Q","R","S","T","U","V","W","X","Y","Z","[","\\\\","]","^","_","`","a","b","c","d","e","f","g","h","i","j","k","l","m","n","o","p","q","r","s","t","u","v","w","x","y","z","{","|","}","~","○","█","▒","🐱","⬇️","░","✽","●","♥","☉","웃","⌂","⬅️","😐","♪","🅾️","◆","…","➡️","★","⧗","⬆️","ˇ","∧","❎","▤","▥","あ","い","う","え","お","か","き","く","け","こ","さ","し","す","せ","そ","た","ち","つ","て","と","な","に","ぬ","ね","の","は","ひ","ふ","へ","ほ","ま","み","む","め","も","や","ゆ","よ","ら","り","る","れ","ろ","わ","を","ん","っ","ゃ","ゅ","ょ","ア","イ","ウ","エ","オ","カ","キ","ク","ケ","コ","サ","シ","ス","セ","ソ","タ","チ","ツ","テ","ト","ナ","ニ","ヌ","ネ","ノ","ハ","ヒ","フ","ヘ","ホ","マ","ミ","ム","メ","モ","ヤ","ユ","ヨ","ラ","リ","ル","レ","ロ","ワ","ヲ","ン","ッ","ャ","ュ","ョ","◜","◝"]
     return "".join(chars[b] for b in bs)
+
+def pack_string(s):
+    blob = pack_variant(len(s))
+    for c in s:
+        blob += pack_byte(ord(c))
+    return blob
 
 def to_cart(s,pico_path,carts_path,cart_name,cart_id,cart_code=None, label=None):
     cart="""\
@@ -226,3 +236,32 @@ def minify_file(infile, outfile):
       main_code = rule[0].sub(rule[1],main_code)
     with open(outfile, "w", encoding='utf-8') as f:
       f.write(main_code)
+
+# de-duplicate 8x8 sprites from the given image
+# image must use logical colors (eg. 2 pixels per byte)
+def register_sprites(sprites, tex, tex_width, tex_height, max_id=None, hint=None):
+  tiles = []
+  w,h = tex_width // 8, tex_height // 8
+  for j in range(0,h):
+    for i in range(0,w):
+      data = bytes([])
+      for y in range(8):
+        # read nimbles
+        for x in range(0,8,2):
+          # image is using the pico palette (+transparency)
+          low = tex[(i*8 + x) + (j*8 + y) * tex_width]
+          high = tex[(i*8 + x + 1) + (j*8 + y) * tex_width]
+          data += bytes([high|low<<4])
+      tileid = 0
+      if data in sprites:
+        tileid = sprites.index(data)
+      else:
+        tileid = len(sprites)
+        sprites.append(data)   
+      if max_id and tileid>max_id:
+        msg = "Invalid sprite id: {} max: {}".format(tileid, max_id)
+        if hint:
+          msg += "\n{}".format(hint)
+        raise Exception(msg)
+      tiles.append(tileid)
+  return tiles
