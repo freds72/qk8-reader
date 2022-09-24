@@ -11,7 +11,7 @@ function polyfill(p,np,c)
 	end
 
 	--data for left & right edges:
-	local lj,rj,ly,ry,lx,ldx,rx,rdx=mini,mini,miny,miny
+	local lj,rj,ly,ry,lx,ldx,rx,rdx=mini,mini,miny-1,miny-1
 	--step through scanlines.
 	if(maxy>127) maxy=127
 	if(miny<0) miny=-1
@@ -47,101 +47,216 @@ function polyfill(p,np,c)
 	end
 end
 
-
-function polytex_ymajor(v,n,slope)
-	local nodes_x,nodes_u,nodes_v,offset={},{},{},(slope<<7)&-1
-	for i=1,n do
-		local p0,p1=v[i%n+1],v[i]
-		local x0,w0,x1,w1=p0.x,p0.w,p1.x,p1.w
-		local u0,v0,u1,v1=p0.u*w0,p0.v*w0,p1.u*w1,p1.v*w1
-		local y0,y1=p0.y-x0*slope,p1.y-x1*slope
-
-		if(y0>y1) x0,y0,w0,x1,y1,w1,u0,v0,u1,v1=x1,y1,w1,x0,y0,w0,u1,v1,u0,v0
-		local dy=y1-y0
-		local cy0,dx,dw,du,dv=(y0&-1)+1,(x1-x0)/dy,(w1-w0)/dy,(u1-u0)/dy,(v1-v0)/dy
-		-- sub-pix shift
-		local sy=cy0-y0
-		if(offset>0) then
-			local ymin=y0+offset
-			if(ymin<0) x0-=ymin*dx w0-=ymin*dw u0-=ymin*du v0-=ymin*dv cy0=-offset sy=0 
-			if(y1>127) y1=127
-		else
-			if(y0<0) x0-=y0*dx w0-=y0*dw u0-=y0*du v0-=y0*dv cy0=0 sy=0
-			if(y1+offset>127) y1=127-offset
-		end
-		x0+=sy*dx  
-		w0+=sy*dw
-		u0+=sy*du
-		v0+=sy*dv
-			
-		for y=cy0,y1 do
-			local x1=nodes_x[y]
-			if x1 then
-				local x0,u0,v0,u1,v1=x0,u0/w0,v0/w0,nodes_u[y],nodes_v[y]
-				if(x0>x1) x0,x1,u0,v0,u1,v1=x1,x0,u1,v1,u0,v0
-				local ddx=((x1+0x1.ffff)&-1)-(x0&-1)
-				clip(x0+1,0,ddx,128)		
-				local ddu,ddv=(u1-u0)/ddx,(v1-v0)/ddx				
-				tline(0,y,127,y+offset,u0-x0*ddu,v0-x0*ddv,ddu,ddv)
-			else
-				nodes_x[y]=x0
-				nodes_u[y]=u0/w0
-				nodes_v[y]=v0/w0
-			end
-			x0+=dx
-			w0+=dw
-			u0+=du
-			v0+=dv
-		end
+function polytex_ymajor(p,np,angle)
+	local miny,maxy,mini=32000,-32000
+	-- find extent
+	for i=1,np do
+		local v=p[i]
+		local y=v.y
+		if (y<miny) mini,miny=i,y
+		if (y>maxy) maxy=y
 	end
-	clip()
+
+	--data for left & right edges:
+	local lj,rj,ly,ry,lx,ldx,rx,rdx,lu,ldu,lv,ldv,ru,rdu,rv,rdv,lw,ldw,rw,rdw=mini,mini,miny-1,miny-1
+
+	local stride=max(12,64*(1-angle))\1
+	--step through scanlines.
+	if(maxy>127) maxy=127
+	if(miny<0) miny=-1
+	for y=1+miny&-1,maxy do
+		--maybe update to next vert
+		while ly<y do
+			local v0=p[lj]
+			lj+=1
+			if (lj>np) lj=1
+			local v1=p[lj]
+			local y0,y1=v0.y,v1.y
+			ly=y1&-1
+			lx=v0.x
+			lw=v0.w
+			lu=v0.u*lw
+			lv=v0.v*lw
+			ldx=(v1.x-lx)/(y1-y0)
+			ldu=(v1.u*v1.w-lu)/(y1-y0)
+			ldv=(v1.v*v1.w-lv)/(y1-y0)
+			ldw=(v1.w-lw)/(y1-y0)
+			--sub-pixel correction
+			local dy=y-y0
+			lx+=dy*ldx
+			lu+=dy*ldu
+			lv+=dy*ldv
+			lw+=dy*ldw
+		end   
+		while ry<y do
+			local v0=p[rj]
+			rj-=1
+			if (rj<1) rj=np
+			local v1=p[rj]
+			local y0,y1=v0.y,v1.y
+			ry=y1&-1
+			rx=v0.x
+			rw=v0.w
+			ru=v0.u*rw
+			rv=v0.v*rw
+			rdx=(v1.x-rx)/(y1-y0)
+			rdu=(v1.u*v1.w-ru)/(y1-y0)
+			rdv=(v1.v*v1.w-rv)/(y1-y0)
+			rdw=(v1.w-rw)/(y1-y0)
+			--sub-pixel correction
+			local dy=y-y0
+			rx+=dy*rdx
+			ru+=dy*rdu
+			rv+=dy*rdv
+			rw+=dy*rdw
+		end
+		--rectfill(rx,y,lx,y,12)
+		do
+			local rx,lx,ru,rv,rw=rx,lx,ru,rv,rw
+			local ddx=lx-rx--((lx+0x1.ffff)&-1)-(rx&-1)
+			local ddu,ddv,ddw=(lu-ru)/ddx,(lv-rv)/ddx,(lw-rw)/ddx
+			if(rx<0) ru-=rx*ddu rv-=rx*ddv rw-=rx*ddw rx=0
+			local pix=1-rx&0x0.ffff
+			ru+=pix*ddu
+			rv+=pix*ddv
+			rw+=pix*ddw
+
+			-- stride factor
+			ddu*=stride
+			ddv*=stride
+			ddw*=stride
+
+			-- clip right span edge
+			if(lx>127) lx=127
+			poke(0x5f22,lx+1)
+
+			for x=rx,lx,stride do
+				local u,v=ru/rw,rv/rw
+				rw+=ddw
+				tline(x,y,x+stride-1,y,u,v,((ddu-u*ddw)/stride)/rw,((ddv-v*ddw)/stride)/rw)
+				--pset(x+stride-1,y,12)
+				ru+=ddu
+				rv+=ddv
+			end
+		end
+
+		lx+=ldx
+		lu+=ldu
+		lv+=ldv
+		lw+=ldw
+		rx+=rdx
+		ru+=rdu
+		rv+=rdv
+		rw+=rdw
+	end
+	poke(0x5f22,127)
 end
 
-function polytex_xmajor(v,n,slope)
-	local nodes_y,nodes_u,nodes_v,offset={},{},{},(slope<<7)&-1
-	for i=1,n do
-		local p0,p1=v[i%n+1],v[i]
-		local y0,w0,y1,w1=p0.y,p0.w,p1.y,p1.w
-		local u0,v0,u1,v1=p0.u*w0,p0.v*w0,p1.u*w1,p1.v*w1
-		local x0,x1=p0.x-y0*slope,p1.x-y1*slope
-		
-		if(x0>x1) x0,y0,w0,x1,y1,w1,u0,v0,u1,v1=x1,y1,w1,x0,y0,w0,u1,v1,u0,v0
-		local dx=x1-x0
-		local cx0,dy,dw,du,dv=(x0&-1)+1,(y1-y0)/dx,(w1-w0)/dx,(u1-u0)/dx,(v1-v0)/dx
-		--if(i==2) printh("start\t"..v0.."("..dw..")".."\t"..v1.."("..w1..")")
-		-- sub-pix shift
-		local sx=cx0-x0
-		if offset>0 then
-			local xmin=x0+offset
-			if(xmin<0) y0-=xmin*dy w0-=xmin*dw u0-=xmin*du v0-=xmin*dv cx0=-offset sx=0
-			if(x1>127) x1=127
-		else
-			if(x0<0) y0-=x0*dy w0-=x0*dw u0-=x0*du v0-=x0*dv cx0=0 sx=0
-			if(x1+offset>127) x1=127-offset
-		end
-		y0+=sx*dy  
-		w0+=sx*dw
-		u0+=sx*du
-		v0+=sx*dv
-		for x=cx0,x1 do
-			local y1=nodes_y[x]
-			if y1 then
-				local y0,u0,v0,u1,v1=y0,u0/w0,v0/w0,nodes_u[x],nodes_v[x]
-				if(y0>y1) y0,y1,u0,v0,u1,v1=y1,y0,u1,v1,u0,v0
-				local ddy=((y1+0x1.ffff)&-1)-(y0&-1)
-				clip(0,y0+1,128,ddy)
-				local ddu,ddv=(u1-u0)/ddy,(v1-v0)/ddy
-				tline(x,0,x+offset,127,u0-y0*ddu,v0-y0*ddv,ddu,ddv)
-			else
-				nodes_y[x]=y0
-				nodes_u[x]=u0/w0
-				nodes_v[x]=v0/w0
-			end
-			y0+=dy
-			w0+=dw
-			u0+=du
-			v0+=dv
-		end
+
+
+function polytex_xmajor(p,np,angle)
+	local minx,maxx,mini=32000,-32000
+	-- find extent
+	for i=1,np do
+		local v=p[i]
+		local x=v.x
+		if (x<minx) mini,minx=i,x
+		if (x>maxx) maxx=x
 	end
-	clip()
+
+	--data for left & right edges:
+	local lj,rj,lx,rx,ly,ldy,ry,rdy,lu,ldu,lv,ldv,ru,rdu,rv,rdv,lw,ldw,rw,rdw=mini,mini,minx-1,minx-1
+
+	local stride=max(12,64*(1-angle))\1
+	--step through scanlines.
+	if(maxx>127) maxx=127
+	if(minx<0) minx=-1	
+	for x=1+minx&-1,maxx do
+		--maybe update to next vert
+		while lx<x do
+			local v0=p[lj]
+			lj+=1
+			if (lj>np) lj=1
+			local v1=p[lj]
+			local x0,x1=v0.x,v1.x
+			lx=x1&-1
+			ly=v0.y
+			lw=v0.w
+			lu=v0.u*lw
+			lv=v0.v*lw
+			local dx=x1-x0
+			ldy=(v1.y-ly)/dx
+			ldu=(v1.u*v1.w-lu)/dx
+			ldv=(v1.v*v1.w-lv)/dx
+			ldw=(v1.w-lw)/dx
+			--sub-pixel correction
+			dx=x-x0
+			ly+=dx*ldy
+			lu+=dx*ldu
+			lv+=dx*ldv
+			lw+=dx*ldw
+		end   
+		while rx<x do
+			local v0=p[rj]
+			rj-=1
+			if (rj<1) rj=np
+			local v1=p[rj]
+			local x0,x1=v0.x,v1.x
+			rx=x1&-1
+			ry=v0.y
+			rw=v0.w
+			ru=v0.u*rw
+			rv=v0.v*rw
+			local dx=x1-x0
+			rdy=(v1.y-ry)/dx
+			rdu=(v1.u*v1.w-ru)/dx
+			rdv=(v1.v*v1.w-rv)/dx
+			rdw=(v1.w-rw)/dx
+			--sub-pixel correction
+			dx=x-x0
+			ry+=dx*rdy
+			ru+=dx*rdu
+			rv+=dx*rdv
+			rw+=dx*rdw
+		end
+		--rectfill(rx,y,lx,y,12)
+		do
+			local ry,ly,ru,rv,rw,lu,lv,lw=ly,ry,lu,lv,lw,ru,rv,rw
+			local ddy=ly-ry--((lx+0x1.ffff)&-1)-(rx&-1)
+			local ddu,ddv,ddw=(lu-ru)/ddy,(lv-rv)/ddy,(lw-rw)/ddy
+			if(ry<0) ru-=ry*ddu rv-=ry*ddv rw-=ry*ddw ry=0
+			local pix=1-ry&0x0.ffff
+			ru+=pix*ddu
+			rv+=pix*ddv
+			rw+=pix*ddw
+
+			-- stride factor
+			ddu*=stride
+			ddv*=stride
+			ddw*=stride
+
+			-- clip right span edge
+			if(ly>127) ly=127
+			poke(0x5f23,ly+1)
+
+			for y=ry,ly,stride do
+				local u,v=ru/rw,rv/rw
+				rw+=ddw
+				tline(x,y,x,y+stride-1,u,v,((ddu-u*ddw)/stride)/rw,((ddv-v*ddw)/stride)/rw)
+				--pset(x+stride-1,y,12)
+				ru+=ddu
+				rv+=ddv
+			end
+		end
+		
+		ly+=ldy
+		lu+=ldu
+		lv+=ldv
+		lw+=ldw
+		ry+=rdy
+		ru+=rdu
+		rv+=rdv
+		rw+=rdw
+	end
+	poke(0x5f23,127)
 end
