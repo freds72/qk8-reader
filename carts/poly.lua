@@ -60,7 +60,8 @@ function polytex_ymajor(p,np,angle)
 	--data for left & right edges:
 	local lj,rj,ly,ry,lx,ldx,rx,rdx,lu,ldu,lv,ldv,ru,rdu,rv,rdv,lw,ldw,rw,rdw=mini,mini,miny-1,miny-1
 
-	local stride=max(12,64*(1-angle))\1
+	local stride=max(3,(6*(1-angle))\1)
+	local len=1<<stride
 	--step through scanlines.
 	if(maxy>127) maxy=127
 	if(miny<0) miny=-1
@@ -122,19 +123,19 @@ function polytex_ymajor(p,np,angle)
 			rw+=pix*ddw
 
 			-- stride factor
-			ddu*=stride
-			ddv*=stride
-			ddw*=stride
+			ddu<<=stride
+			ddv<<=stride
+			ddw<<=stride
 
 			-- clip right span edge
 			if(lx>127) lx=127
 			poke(0x5f22,lx+1)
 
-			for x=rx,lx,stride do
+			for x=rx,lx,len do
 				local u,v=ru/rw,rv/rw
 				rw+=ddw
-				tline(x,y,x+stride-1,y,u,v,((ddu-u*ddw)/stride)/rw,((ddv-v*ddw)/stride)/rw)
-				--pset(x+stride-1,y,12)
+				tline(x,y,x+len-1,y,u,v,((ddu-u*ddw)/rw)>>stride,((ddv-v*ddw)/rw)>>stride)
+				-- pset(x+len-1,y,15)
 				ru+=ddu
 				rv+=ddv
 			end
@@ -167,7 +168,9 @@ function polytex_xmajor(p,np,angle)
 	--data for left & right edges:
 	local lj,rj,lx,rx,ly,ldy,ry,rdy,lu,ldu,lv,ldv,ru,rdu,rv,rdv,lw,ldw,rw,rdw=mini,mini,minx-1,minx-1
 
-	local stride=max(12,64*(1-angle))\1
+	local stride=max(3,(6*(1-angle))\1)
+	local len=1<<stride
+
 	--step through scanlines.
 	if(maxx>127) maxx=127
 	if(minx<0) minx=-1	
@@ -231,19 +234,20 @@ function polytex_xmajor(p,np,angle)
 			rw+=pix*ddw
 
 			-- stride factor
-			ddu*=stride
-			ddv*=stride
-			ddw*=stride
+			ddu<<=stride
+			ddv<<=stride
+			ddw<<=stride
 
 			-- clip right span edge
 			if(ly>127) ly=127
 			poke(0x5f23,ly+1)
 
-			for y=ry,ly,stride do
+			for y=ry,ly,len do
 				local u,v=ru/rw,rv/rw
 				rw+=ddw
-				tline(x,y,x,y+stride-1,u,v,((ddu-u*ddw)/stride)/rw,((ddv-v*ddw)/stride)/rw)
-				--pset(x+stride-1,y,12)
+				tline(x,y,x,y+len-1,u,v,((ddu-u*ddw)/rw)>>stride,((ddv-v*ddw)/rw)>>stride)
+				--printh(rw.." "..ddu.." "..(ddu-u*ddw).." @"..stride)
+				-- pset(x,y+len-1,12)
 				ru+=ddu
 				rv+=ddv
 			end

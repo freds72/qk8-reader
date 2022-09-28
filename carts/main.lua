@@ -298,6 +298,8 @@ function make_cam()
       local m=self.m
       local pts,cam_u,cam_v,v_cache,f_cache,fu_cache,fv_cache,cam_pos={},{m[1],m[5],m[9]},{m[2],m[6],m[10]},setmetatable({m=m,v=v_unpack},v_cache_class),{},{},{},self.pos
       
+      -- printh(cam_u[1]..","..cam_u[2]..","..cam_u[3].." | "..cam_v[1]..","..cam_v[2]..","..cam_v[3])
+      
       local flick,pal0=time()%2<0.5*rnd()+0.5
       for j=lstart,lend do
         local leaf=leaves[j]
@@ -362,17 +364,15 @@ function make_cam()
                     if not u then
                       -- not needed (we take abs u)
                       -- if(side) s,t=-s,-t
-                      local a=atan2(plane_dot(fn,cam_u),plane_dot(fn,cam_v))
-                      -- normalized 2d vector
-                      u,v=abs(sin(a)),abs(cos(a))
+                      u,v=abs(plane_dot(fn,cam_u)),abs(plane_dot(fn,cam_v))
                       fu_cache[fn]=u
                       fv_cache[fn]=v
                     end
 
                     if u>v then
-                      polytex_ymajor(pts,np,v)
+                      polytex_xmajor(pts,np,v)
                     else
-                      polytex_xmajor(pts,np,u)
+                      polytex_ymajor(pts,np,u)
                     end
                   else
                     -- sky?
