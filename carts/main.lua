@@ -271,12 +271,9 @@ function make_cam()
       return visleaves
     end,  
     draw_faces=function(self,verts,faces,leaves,lstart,lend,brushes)    
-      local v_unpack=function(vi)
-        return verts[vi],verts[vi+1],verts[vi+2]
-      end
       local v_cache_class={        
         __index=function(self,vi)
-          local m,code,x,y,z=self.m,0,self.v(vi)
+          local m,code,x,y,z=self.m,0,verts[vi],verts[vi+1],verts[vi+2]
           local ax,ay,az=m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15]
 
           -- znear=8
@@ -296,7 +293,7 @@ function make_cam()
       }
 
       local m=self.m
-      local pts,cam_u,cam_v,v_cache,f_cache,fu_cache,fv_cache,cam_pos={},{m[1],m[5],m[9]},{m[2],m[6],m[10]},setmetatable({m=m,v=v_unpack},v_cache_class),{},{},{},self.pos
+      local pts,cam_u,cam_v,v_cache,f_cache,fu_cache,fv_cache,cam_pos={},{m[1],m[5],m[9]},{m[2],m[6],m[10]},setmetatable({m=m},v_cache_class),{},{},{},self.pos
       
       -- printh(cam_u[1]..","..cam_u[2]..","..cam_u[3].." | "..cam_v[1]..","..cam_v[2]..","..cam_v[3])
       
@@ -422,10 +419,6 @@ function make_cam()
                   if(clipcode>0) pts,np=z_poly_clip(pts,np,uvi!=-1)
                   if np>2 then
                     if uvi!=-1 then
-                      local a=atan2(plane_dot(fn,cam_u),plane_dot(fn,cam_v))
-                      -- normalized 2d vector
-                      local u,v=sin(a),cos(a)
-  
                       ---- enable texture
                       local mi=faces[fi+6]
                       if flags&8==0 then
@@ -442,11 +435,12 @@ function make_cam()
                         poke4(0x5f38,0)
                         poke4(0x2000,unpack(_maps[mi+1]))                  
                       end
-                      local umask,vmask=u>>31,v>>31                    
-                      if u^^umask>v^^vmask then
-                        polytex_ymajor(pts,np,v/u)
+
+                      local u,v=abs(plane_dot(fn,cam_u)),abs(plane_dot(fn,cam_v))
+                      if u>v then
+                        polytex_xmajor(pts,np,v)
                       else
-                        polytex_xmajor(pts,np,u/v)
+                        polytex_ymajor(pts,np,u)
                       end
                     else                    
                       polyfill(pts,np,0)            
@@ -456,63 +450,7 @@ function make_cam()
               end
             end
           end
-        end
-        
-        -- draw entities in this convex space
-
-        if leaf.things then
-          -- default map location+stride
-          poke(0x5f56,0x80,32)
-          -- reset texcoords
-          poke4(0x5f38,0)
-          local faces={}
-          for thing in pairs(leaf.things) do
-            -- collect all faces "closest" to camera
-            if thing.visleaf==leaf then
-              -- model to cam + cam pos in model space
-              local v_cache,cam_pos=setmetatable({m=m_x_m(self.m,thing.m),v=v_unpack},v_cache_class),m_inv_x_v(thing.m,self.pos)
-                          
-              for face in all(thing.model.f) do  
-                -- dual sided or visible?
-                if face.dual or v_dot(face.n,cam_pos)>face.cp then
-                  local pts,np,outcode,clipcode,w,uvs={},face.ni,0xffff,0,0,face.uvs
-                  for k=1,np do
-                    -- base index in verts array
-                    local a=v_cache[face[k]]
-                    outcode&=a.outcode
-                    clipcode+=a.outcode&2
-                    pts[k]=a
-                    if uvs then
-                      a.u=uvs[k][1]
-                      a.v=uvs[k][2]
-                    end
-                    w+=a.w
-                  end
-                  if outcode==0 then 
-                    if(clipcode>0) pts,np,uvs=z_poly_clip(pts,np,uvs)
-          
-                    if np>2 then
-                      pts.f=face
-                      pts.key=(w/face.ni)<<8
-                      add(faces,pts)
-                    end
-                  end
-                end  
-              end
-            end
-          end 
-          -- render in order
-          rsort(faces)       
-          for _,pts in ipairs(faces) do            
-            -- models are rendered in "affine" mode
-            local face=pts.f
-            if face.color then
-              polyfill(pts,#pts,face.color)
-            else
-              polytex_ymajor(pts,#pts,0)
-            end
-          end
-        end        
+        end       
       end
     end  
   }
@@ -689,35 +627,9 @@ function make_player(pos,a)
 
       self.pos=v_add(self.pos,velocity)
       self.m=make_m_from_euler(unpack(angle))
-
-      -- fire?
-      fire_ttl=max(fire_ttl-1)
-      if fire_ttl==0 and btn(5) then
-        --[[
-        make_particle(
-          v_add(v_add(self.pos,m_up(self.m),18+rnd(4)),m_right(self.m),4-rnd(8)),
-          m_fwd(self.m),
-          24+rnd(8))  
-        ]]
-        fire_ttl=5      
-      end
     end
   } 
 end
-
-local _things={}
-function make_thing(bsp,pos,model)
-  local thing=add(_things,{
-    pos=pos,
-    m=make_m_from_v_angle({0,1,0},rnd()),
-    nodes={},
-    model=model})
-  -- todo: get size from wad
-  register_thing_subs(bsp,thing,1)
-  --
-  m_set_pos(thing.m,pos)
-end
-
 
 -->8
 -- bsp functions
@@ -741,38 +653,6 @@ function is_empty(node,pos)
   return node.contents!=-1
   --return node.contents!=-2 or node.contents!=-1
 end
-
--- detach a thing from a convex sector (leaf)
-function unregister_thing_subs(thing)
-  for node in pairs(thing.nodes) do
-    if(node.things) node.things[thing]=nil
-  end
-end
-
--- registers a thing in all convex sectors within radius
-function register_thing_subs(node,thing,radius)
-  if(not node) return
-  -- leaf?
-  if node.contents then
-    -- thing -> leaf
-    thing.nodes[node]=true
-    -- leaf -> thing
-    if(not node.things) node.things={}
-    node.things[thing]=true
-    return
-  end
-
-  local dist,d=plane_dot(node.plane,thing.pos)
-  local side,otherside=dist>d-radius,dist>d+radius
-  
-  register_thing_subs(node[side],thing,radius)
-  
-  -- straddling?
-  if side!=otherside then
-    register_thing_subs(node[otherside],thing,radius)
-  end
-end
-
 
 -- https://github.com/id-Software/Quake/blob/bf4ac424ce754894ac8f1dae6a3981954bc9852d/WinQuake/world.c
 -- hull location
@@ -847,9 +727,6 @@ function _init()
   -- 
   _cam=make_cam()
   _plyr=make_player(pos,angle)
-  for i=1,2 do
-    --make_skull(v_add(pos,{0.5-rnd(),rnd(),0.5-rnd()},48),{0,1,0})
-  end
 end
 
 function _update()
@@ -867,10 +744,6 @@ function _update()
 
   _plyr:update()
   
-  for p in all(_particles) do
-    p:update()
-  end
-
   _cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
 end
 
@@ -885,7 +758,7 @@ function time_tostr(t)
 end
 
 function _draw()
-  cls(0)
+  cls()
   
   --[[
   local door=_bsps[2]
@@ -923,7 +796,6 @@ function _draw()
       bsp_clip(_model.bsp,poly,out,uvi!=-1)
     end
   end
-
   ]]
 
   local visleaves=_cam:collect_leaves(_model.bsp,_leaves)
@@ -1205,62 +1077,10 @@ function unpack_map()
       leaf_end=unpack_variant()})
   end,"models")
 
-  -- 3d models
-  _models={}
-    -- for all models
-	unpack_array(function(i)
-      local faces={}
-      local model={f=faces}
-
-      -- vertices
-      local base=#verts+1
-      unpack_array(function()
-        unpack_vert(verts)
-      end)
-      -- faces
-      unpack_array(function()
-        local flags,f=mpeek(),add(faces,{ni=mpeek()})
-
-        if(flags&0x1!=0) f.dual=true
-        -- vertex indices
-        for i=1,f.ni do
-          -- direct reference to vertex
-          f[i]=base+vert_sizeof*unpack_variant()
-        end
-        if flags&0x2!=0 then
-          local uvs={}
-          for i=1,f.ni do
-            -- uvs (rebased to a 256x256 picture)
-            add(uvs,{mpeek()/8,mpeek()/8})
-          end
-          f.uvs=uvs
-        else
-          f.color=mpeek()
-        end
-        -- normal
-        f.n=unpack_vert()
-        -- n.p cache
-        local base=f[1]
-        f.cp=v_dot(f.n,{verts[base],verts[base+1],verts[base+2]})
-      end)
-    -- index by name
-    _models[i]=model
-  end,"3d models")
-
   -- unpack player position
   -- todo: merge with general entities decode
   local plyr_pos,plyr_angle=unpack_vert(),unpack_fixed()
   
-  -- entities (player, triggers...)
-  -- todo: improve
-  unpack_array(function()    
-    make_thing(
-      models[1].bsp,
-      unpack_vert(),
-      unpack_ref(_models)
-    )
-  end)
-
   -- triggers
   unpack_array(function()
     -- standard triggers parameters

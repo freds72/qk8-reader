@@ -17,7 +17,6 @@ from lzs import Codec
 from dotdict import dotdict
 
 local_dir = os.path.dirname(os.path.realpath(__file__))
-blender_exe = os.path.expandvars(os.path.join("%programfiles%","Blender Foundation","Blender 2.92","blender.exe"))
 
 def call(args):
     proc = Popen(args, stdout=PIPE, stderr=PIPE, cwd=local_dir)
@@ -121,30 +120,6 @@ __lua__
   with open(cart_path, "w") as f:
     f.write(cart)
 
-# extract blender models
-def pack_models(home_path, blender_files, colormap):
-    # data buffer
-    blob = ""
-
-    # convert HW palette to parameter
-    colors = "".join(map(pack_byte, colormap.palette.pal()))
-
-    # 3d models
-    blob += pack_variant(len(blender_files))
-    for i, blender_file in enumerate(blender_files):
-        logging.info("Exporting 3d model: {}".format(blender_file))
-        fd, path = tempfile.mkstemp()
-        try:
-            os.close(fd)
-            exitcode, out, err = call([blender_exe,os.path.join(home_path, blender_file),"--background","--python","blender_reader.py","--","--colors",colors,"--out",path])
-            if err:
-                raise Exception('Unable to loadt: {}. Exception: {}'.format(blender_file,err))
-            logging.debug("Blender exit code: {} \n out:{}\n err: {}\n".format(exitcode,out,err))
-            with open(path, 'r') as outfile:      
-                blob += outfile.read()
-        finally:
-            os.remove(path)
-    return blob
 
 def pack_entities(entities, models):
   blob = ""
@@ -162,22 +137,6 @@ def pack_entities(entities, models):
   logging.info("Found player start: {} at: {}".format(player_start.classname, player_start.origin))
   blob += pack_vec3(player_start.origin)
   blob += pack_fixed(player_start.get("angle",0))
-
-  # all entities with a model
-  threed_models = []
-  things = list([e for e in entities if "model.path" in e])
-  blob += pack_variant(len(things))
-  for thing in things:
-    blob += pack_vec3(thing.origin)    
-    threed_model = thing.get("model.path")
-    id = 0
-    if threed_model not in threed_models:
-      id = len(threed_models)
-      logging.info("Registering 3d model: {} with ID: {}".format(threed_model, id))
-      threed_models.append(threed_model)
-    else:
-      id = threed_models.index(threed_model)
-    blob += pack_variant(id + 1)
 
   # (supported) triggers
   trigger_filter = re.compile("trigger*")
@@ -255,15 +214,14 @@ def pack_entities(entities, models):
   blob += pack_variant(len(doors))
   blob += "".join(doors)
 
-  return (blob, threed_models)
+  return blob
 
 
 def pack_archive(pico_path, carts_path, stream, mapname, compress=False, release=None, dump_lightmaps=False, compress_more=False, test=False, only_lightmap=False):
   # extract palette
   colormap = ColormapReader(stream)
 
-  raw_data = colormap.pack()
-  uv = ImageReader(colormap.palette.raw()).read(FileStream(os.path.join(carts_path,"..")), os.path.join("models","uvmap.png"))
+  raw_data = colormap.pack()  
 
   # get "game classes" (FGD)
   fgd_classes = {}
@@ -274,29 +232,24 @@ def pack_archive(pico_path, carts_path, stream, mapname, compress=False, release
     fgd_classes = reader.result
 
   # extract data  
-  level_data, sprite_data, map_data, entities, models = pack_bsp(stream, os.path.join("maps",mapname + ".bsp"), fgd_classes, colormap.colors, uv.sprites, only_lightmap)
+  level_data, sprite_data, map_data, entities, models = pack_bsp(stream, os.path.join("maps",mapname + ".bsp"), fgd_classes, colormap.colors, [], only_lightmap)
   
   raw_data += level_data
 
   # pack entities
-  entities_data, threed_models = pack_entities(entities, models)
+  entities_data  = pack_entities(entities, models)
 
-  # extract 3d models
-  blender_data = pack_models(os.path.join(carts_path,".."), threed_models, colormap)
-
-  raw_data += blender_data
   raw_data += entities_data
 
   if not test:
     game_data = compress and compress_byte_str(raw_data, more=compress_more) or raw_data
 
-    to_gamecart(carts_path, "q8k", uv.tiles + map_data, sprite_data, compress, release)
+    to_gamecart(carts_path, "q8k", map_data, sprite_data, compress, release)
 
     # export to game
     to_multicart(game_data, pico_path, carts_path, "q8k")  
 
 def main():
-  global blender_exe
   parser = argparse.ArgumentParser()
   parser.add_argument("--pico-home", required=True, type=str, help="Full path to PICO8 folder")
   parser.add_argument("--carts-path", required=True, type=str, help="Path to carts folder where game is exported")
@@ -308,18 +261,10 @@ def main():
   parser.add_argument("--dump-lightmaps", action='store_true', required=False, help="Writes lightmaps to disk")
   parser.add_argument("--test", action='store_true', required=False, help="Test mode - does not write cart data")
   parser.add_argument("--lightmaps", action='store_true', required=False, help="Lightmap (only) textures mode")
-  parser.add_argument("--blender-location", required=False, type=str, help="Full path to Blender 2.9+ executable (default: {})".format(blender_exe))
 
   args = parser.parse_args()
 
   logging.basicConfig(level=logging.INFO)
-
-  if args.blender_location:
-    blender_exe = args.blender_location
-  logging.debug("Blender location: {}".format(blender_exe))
-  # test Blender path
-  if not os.path.isfile(os.path.join(blender_exe)):
-    raise Exception("Unable to locate Blender app at: {}".format(blender_exe))
 
   with FileStream(args.mod_path) as stream:
     pack_archive(args.pico_home, args.carts_path, stream, args.map, compress=args.compress or args.compress_more, release=args.release, compress_more=args.compress_more, test=args.test, only_lightmap=args.lightmaps)
