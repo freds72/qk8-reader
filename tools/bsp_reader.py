@@ -516,13 +516,15 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
             # if block:
             #   lightmaps_img.putpixel((blockx+x,blocky+y),(light,light,light))
             # adjust light range to gradient size (16)
-            for i in range(2):
+            sample = 0
+            for i in range(4):
               light_id = face.styles[i]          
               if light_id in active_lights:
                 scale = active_lights[light_id]
                 if scale>0:
                   lumen = lightmaps[lexel + i*lightmap_size]
-                  lightmap[x + y*lightmap_width] += scale * lumen
+                  sample += scale * lumen
+            lightmap[x + y*lightmap_width] = min(255, sample)
 
         for y in range(lightmap_height):
           for x in range(lightmap_width):
@@ -531,7 +533,7 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
             # if block:
             #   lightmaps_img.putpixel((blockx+x,blocky+y),(light,light,light))
             # adjust light range to gradient size (16)
-            light = int(min(lightmap[lexel]/2,255) // 16)
+            light = int(lightmap[lexel] // 16)
             # shade = colormap[min(colormap[3].ramp[light],15)]
             # total_light += shade.hw
             # for u in range(texel):

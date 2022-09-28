@@ -298,6 +298,8 @@ function make_cam()
       local m=self.m
       local pts,cam_u,cam_v,v_cache,f_cache,fu_cache,fv_cache,cam_pos={},{m[1],m[5],m[9]},{m[2],m[6],m[10]},setmetatable({m=m,v=v_unpack},v_cache_class),{},{},{},self.pos
       
+      -- printh(cam_u[1]..","..cam_u[2]..","..cam_u[3].." | "..cam_v[1]..","..cam_v[2]..","..cam_v[3])
+      
       local flick,pal0=time()%2<0.5*rnd()+0.5
       for j=lstart,lend do
         local leaf=leaves[j]
@@ -357,22 +359,20 @@ function make_cam()
                       poke4(0x5f38,0)
                       poke4(0x2000,unpack(_maps[mi+1]))                  
                     end
+                    
                     local u,v=fu_cache[fn],fv_cache[fn]
                     if not u then
                       -- not needed (we take abs u)
                       -- if(side) s,t=-s,-t
-                      local a=atan2(plane_dot(fn,cam_u),plane_dot(fn,cam_v))
-                      -- normalized 2d vector
-                      u,v=sin(a),cos(a)
+                      u,v=abs(plane_dot(fn,cam_u)),abs(plane_dot(fn,cam_v))
                       fu_cache[fn]=u
                       fv_cache[fn]=v
                     end
 
-                    local umask,vmask=u>>31,v>>31                    
-                    if u^^umask>v^^vmask then
-                      polytex_ymajor(pts,np,v/u)
+                    if u>v then
+                      polytex_xmajor(pts,np,v)
                     else
-                      polytex_xmajor(pts,np,u/v)
+                      polytex_ymajor(pts,np,u)
                     end
                   else
                     -- sky?
@@ -929,7 +929,7 @@ function _draw()
   local visleaves=_cam:collect_leaves(_model.bsp,_leaves)
   _cam:draw_faces(_model.verts,_model.faces,visleaves,1,#visleaves,out)
 
-  local s=flr(100*stat(1)).."%\n"..(stat(0)\1).."kB"
+  local s="multi-tlines\n"..flr(100*stat(1)).."%\n"..(stat(0)\1).."kB"
   print(s,2,3,1)
   print(s,2,2,12)
 
