@@ -52,6 +52,9 @@ def compress_byte_str(s,raw=False,more=False):
 def pack_sprite(arr):
     return ["".join(map("{:02x}".format,arr[i*4:i*4+4])) for i in range(8)]
 
+def xyz_add(a,b):
+  return dotdict({k:a[k]+b[k] for k in ['x','y','z']})
+
 def to_gamecart(carts_path, name, map_data, gfx_data, compress=False, release=None):
   cart="""\
 pico-8 cartridge // http://www.pico-8.com
@@ -160,6 +163,33 @@ def pack_entities(entities, models):
       flags |= 1
       # cancel negative values for wait
       trigger_blob += pack_variant(max(0,int(trigger.wait*30)))
+    elif trigger.classname == "trigger_teleport":
+      flags |= 4
+      # find all matching targets
+      target = trigger.get("target", None)
+      if not target:
+        raise Exception(f"Missing target for: {trigger.classname}")
+      targets = [e for e in entities if e.get("targetname","")==target and e.classname=="info_teleport_destination"]
+      # pack all matching destination points
+      trigger_blob += pack_variant(len(targets))
+      for t in targets:        
+        # target position
+        trigger_blob += pack_vec3(xyz_add(t.origin, dotdict({'x':0,'y':0,'z':27})))
+        # angle
+        angle = t.get("angle",0)
+        if angle==-1:
+          trigger_blob += pack_vec3(dotdict({'x':0,'y':1,'z':0}))
+          trigger_blob += pack_fixed(0)
+        elif angle==-2:
+          trigger_blob += pack_vec3(dotdict({'x':0,'y':-1,'z':0}))
+          trigger_blob += pack_fixed(0)
+        else:
+          flags |= 8
+          trigger_blob += pack_vec3(dotdict({'x':math.cos(math.pi*angle/180),'y':0,'z':math.sin(math.pi*angle/180)}))
+          # store angle
+          # angle -= 90
+          angle += 180
+          trigger_blob += pack_fixed(angle/360)
 
     # put decoding flag first
     triggers.append(pack_byte(flags) + trigger_blob)

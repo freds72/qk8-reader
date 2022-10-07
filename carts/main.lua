@@ -136,23 +136,11 @@ function m_x_m(a,b)
 		}
 end
 
--- inline matrix vector multiply invert
+-- matrix vector multiply invert
 -- inc. position
 function m_inv_x_v(m,v)
 	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
 	return {m[1]*x+m[2]*y+m[3]*z,m[5]*x+m[6]*y+m[7]*z,m[9]*x+m[10]*y+m[11]*z}
-end
-
-function make_m_from_v_angle(up,angle)
-	local fwd={-sin(angle),0,cos(angle)}
-	local right=v_normz(v_cross(up,fwd))
-	fwd=v_cross(right,up)
-	return {
-		right[1],right[2],right[3],0,
-		up[1],up[2],up[3],0,
-		fwd[1],fwd[2],fwd[3],0,
-		0,0,0,1
-	}
 end
 
 -- registers a new coroutine
@@ -558,12 +546,27 @@ function make_player(pos,a)
   return {
     pos=pos,
     m=make_m_from_euler(unpack(angle)),
+    -- change orientation
+    orient=function(self,pos,dir,a)
+      self.pos=v_clone(pos)
+      -- adjust velocity direction (keep speed)
+      local vn,vl=v_normz(velocity)
+      velocity=v_clone(dir)
+      v_scale(velocity,vl)
+
+      -- force turn?
+      if a then
+        -- turn toward exit point
+        angle[2]=a
+        self.m=make_m_from_euler(unpack(angle))
+      end
+    end,
     update=function(self)
       -- damping      
       angle[3]*=0.8
       v_scale(dangle,0.6)
       velocity[1]*=0.7
-      velocity[2]*=0.9
+      --velocity[2]*=0.9
       velocity[3]*=0.7
 
       -- move
@@ -1084,14 +1087,21 @@ function unpack_map()
   -- triggers
   unpack_array(function()
     -- standard triggers parameters
-    local flags,model,delay,wait,msg=mpeek(),unpack_ref(models),unpack_variant(),0
+    local flags,model,delay,wait,msg,targets=mpeek(),unpack_ref(models),unpack_variant(),0
     -- triggers are not solid
     model.solid=nil
     if flags&2!=0 then
       msg=unpack_string()
     end
     if flags&1!=0 then
-        wait=unpack_variant()
+      wait=unpack_variant()
+    end
+    if flags&4!=0 then
+      targets={}
+      wait=5
+      unpack_array(function()
+        add(targets,{pos=unpack_vert(),dir=unpack_vert(),angle=unpack_fixed()})
+      end)
     end
     do_async(function()
       while true do
@@ -1100,10 +1110,17 @@ function unpack_map()
         if hit and hit.contents==-2 then
           wait_async(delay)
           if(msg) _msg=msg
+          -- teleport?
+          if targets then
+            -- todo: sfx
+            local target=rnd(targets)
+            _plyr:orient(target.pos,target.dir,flags&8!=0 and target.angle)
+          end
           -- trigger once?
           wait_async(wait>0 and wait or 60)
           -- clear text message
           _msg=nil
+          -- reapeat?
           if wait==0 then
               return
           end
