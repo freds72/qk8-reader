@@ -761,7 +761,7 @@ function time_tostr(t)
 end
 
 function _draw()
-  cls()
+  cls(15)
   
   --[[
   local door=_bsps[2]
