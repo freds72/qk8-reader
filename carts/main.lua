@@ -143,6 +143,13 @@ function m_inv_x_v(m,v)
 	return {m[1]*x+m[2]*y+m[3]*z,m[5]*x+m[6]*y+m[7]*z,m[9]*x+m[10]*y+m[11]*z}
 end
 
+-- print helper
+function printb(s,x,y,c0,c1)
+  x=x or (64-#tostr(s)/2)
+  ?s,x,y+1,c1
+  ?s,x,y,c0
+end
+
 -- registers a new coroutine
 -- returns a handle to the coroutine
 -- used to cancel a coroutine
@@ -154,35 +161,6 @@ function wait_async(t)
 	for i=1,t do
 		yield()
 	end
-end
-
--- radix sort
--- note: works with positive numbers only
--- from james edge
-function rsort(buffer1)
-  local len, buffer2, idx, count = #buffer1, {}, {}, {}
-
-  -- 10 bits precision
-  for shift=0,5,5 do
-    for i=0,31 do count[i]=0 end
-
-    for i,b in pairs(buffer1) do
-      local k=(b.key>>shift)&31
-      idx[i]=k
-      count[k]+=1
-    end
-
-    for i=1,31 do count[i]+=count[i-1] end
-
-    for i=len,1,-1 do
-      local k=idx[i]
-      local c=count[k]
-      buffer2[c]=buffer1[i]
-      count[k]=c-1
-    end
-
-    buffer1, buffer2 = buffer2, buffer1
-  end
 end
 
 -- camera
@@ -561,14 +539,7 @@ function make_player(pos,a)
         self.m=make_m_from_euler(unpack(angle))
       end
     end,
-    update=function(self)
-      -- damping      
-      angle[3]*=0.8
-      v_scale(dangle,0.6)
-      velocity[1]*=0.7
-      --velocity[2]*=0.9
-      velocity[3]*=0.7
-
+    control=function(self)
       -- move
       local dx,dz,a,jmp=0,0,angle[2],0
       if(btn(0,1)) dx=3
@@ -579,9 +550,18 @@ function make_player(pos,a)
 
       dangle=v_add(dangle,{stat(39),stat(38),dx/4})
       angle=v_add(angle,dangle,1/1024)
-    
+
       local c,s=cos(a),-sin(a)
-      velocity=v_add(velocity,{s*dz-c*dx,jmp-2,c*dz+s*dx})          
+      velocity=v_add(velocity,{s*dz-c*dx,jmp-2,c*dz+s*dx})         
+    end,
+    update=function(self)
+      -- damping      
+      angle[3]*=0.8
+      v_scale(dangle,0.6)
+      velocity[1]*=0.7
+      --velocity[2]*=0.9
+      velocity[3]*=0.7
+             
       -- check next position
       local vn,vl=v_normz(velocity)      
       if vl>0.1 then
@@ -708,6 +688,168 @@ function hitscan(node,p0,p1,out)
   return hit or otherhit
 end
 
+-- game states
+-- transition to next state
+function next_state(state,...)
+	draw_state,update_state=state(...)
+end
+
+function play_state(pos,angle,checkpoints)
+  _cam=make_cam()
+  _plyr=make_player(pos,angle)
+
+	-- active index
+	local checkpoint,n=checkpoints.first,#checkpoints
+
+	-- previous laps
+	local laps={}
+
+	-- remaining time before game over (+ some buffer time)
+	local lap_t,total_t,remaining_t,best_t,best_i=0,0,30*75,32000,1
+	local extend_time_t=0
+
+	-- go display
+	local start_ttl,go_ttl=90,120
+
+
+	local prev_rank,ranks=1,{"st","nd","rd"}
+	return
+		-- draw
+		function()
+			printb("time",nil,2,6,1)
+      poke(0x5f58, 0x1 | 0x2 | 0x4 | 0x8)
+			printb(tostr(ceil(remaining_t/30)),nil,9,11,1)
+      poke(0x5f58,0)
+      
+			-- 1/2/3...
+			if start_ttl>0 then
+				local sx=flr(start_ttl/30)*12
+				printb(sx,nil,12,8,0)
+			end
+
+			-- blink go!
+			if(go_ttl>0 and go_ttl<30 and go_ttl%4<2) printb("go!",nil,36,8,0)
+
+			-- extend time message
+			if(extend_time_t>0 and extend_time_t%30<15) printb("extend time",nil,28,13,0)
+			
+			-- previous times
+			printb("lap time",95,2,6,1)
+			local y=9
+			for i=1,#laps do
+				printb(i,87,y,10,0)
+				printb(laps[i],95,y,best_i==i and 14 or 7,0)
+				y+=7
+			end
+			printb(#laps+1,87,y,9,0)
+			printb(time_tostr(lap_t),95,y,4,0)
+		end,
+		-- update
+		function()
+			go_ttl-=1
+			extend_time_t-=1
+
+			if start_ttl>0 then
+				if(start_ttl%30==0) sfx(2)
+				start_ttl-=1
+				if(start_ttl<0) sfx(3)
+			else
+				total_t+=1
+				remaining_t-=1
+				lap_t+=1
+			end
+
+			if remaining_t==0 then
+				next_state(gameover_state,false,total_t,prev_rank)
+				return
+			end
+
+      -- active track?
+      if checkpoint then        
+        local hit = find_sub_sector(checkpoints[checkpoint].model.clipnodes,_plyr.pos)
+        -- inside volume?        
+        if hit and hit.contents==-2 then
+          checkpoint=checkpoints[checkpoint].next
+          remaining_t+=30*10
+          extend_time_t=30*5
+
+          -- time extension!
+          music(extended_time_music)
+          -- placeholder
+          sfx(4)
+          
+          -- closed lap?
+          if checkpoint==checkpoints.first then
+            -- record time
+            add(laps,time_tostr(lap_t))
+            if lap_t<best_t then
+              best_t=lap_t
+              best_i=#laps
+
+              -- best lap music
+              music(best_lap_music)
+            end
+            -- done?
+            if #laps==3 then
+              next_state(gameover_state,true,total_t,prev_rank)
+            end
+            -- next lap
+            lap_t=0
+          end
+        end
+      end
+
+			_cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
+			if(start_ttl==0) _plyr:control()	
+      _plyr:update()
+		end
+end
+
+function gameover_state(win,total_t,rank)
+	local ttl,angle,prev_best_t=900,-0.5,dget(track.id)	
+	--  or record?
+	local is_record=win and (total_t<prev_best_t or prev_best_t==0)
+	if is_record then
+		-- save new record
+		dset(track.id,total_t)
+	end
+	-- record initial button state (avoid auto-skip screen)
+	local last_btn,btn_press=btn(4),0
+
+	music(gameover_music)
+
+	return 
+		-- draw
+		function()
+			-- total time
+			printr(time_tostr(total_t).." total time",nil,8,9)
+			if(is_record) printr("track record!",nil,17,8,2)
+
+			-- 
+			if ttl%32<16 then
+				printr("❎ select track",nil,57,9,4)
+			else			
+				printr("🅾️ try again",nil,57,10,9)
+			end
+		end,
+		-- update
+		function()
+			ttl-=1
+			angle+=0.01
+
+			if btn(4)!=last_btn then
+				btn_press+=1
+				last_btn=btn(4)
+			end
+
+			if btn_press>1 or ttl<0 then
+				next_state(play_state,track.checkpoints)
+			elseif btnp(5) then
+				-- back to selection title
+				load("qk.p8")
+			end
+		end
+end
 
 function _init()
   -- enable tile 0 + extended memory
@@ -717,7 +859,7 @@ function _init()
   poke(0x5f2d,7)
 
   -- unpack map
-  _bsps,_leaves,pos,angle=decompress("q8k",0,0,unpack_map)
+  _bsps,_leaves,_checkpoints,pos,angle=decompress("q8k",0,0,unpack_map)
   _model=_bsps[1]
   -- restore spritesheet
   reload()
@@ -728,8 +870,7 @@ function _init()
   --pal({129, 133, 5, 134, 143, 15, 130, 132, 4, 137, 9, 136, 8, 13, 12},1,1)
 
   -- 
-  _cam=make_cam()
-  _plyr=make_player(pos,angle)
+  next_state(play_state,pos,angle,_checkpoints)
 end
 
 function _update()
@@ -745,9 +886,7 @@ function _update()
     end
   end
 
-  _plyr:update()
-  
-  _cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
+	update_state()
 end
 
 function padding(n)
@@ -803,10 +942,8 @@ function _draw()
 
   local visleaves=_cam:collect_leaves(_model.bsp,_leaves)
   _cam:draw_faces(_model.verts,_model.faces,visleaves,1,#visleaves,out)
-
-  local s="multi-tlines\n"..flr(100*stat(1)).."%\n"..(stat(0)\1).."kB"
-  print(s,2,3,1)
-  print(s,2,2,12)
+  
+  draw_state()
 
   if(_msg) print(_msg,64-2*#_msg,80,4)
   -- set screen palette (color ramp 8 is neutral)
@@ -1093,9 +1230,11 @@ function unpack_map()
     if flags&2!=0 then
       msg=unpack_string()
     end
+    -- wait until reactivate
     if flags&1!=0 then
       wait=unpack_variant()
     end
+    -- teleport trigger
     if flags&4!=0 then
       targets={}
       wait=5
@@ -1130,6 +1269,25 @@ function unpack_map()
     end)
   end)
 
+  -- checkpoints
+  local checkpoints={}
+  unpack_array(function(i)
+    -- standard triggers parameters
+    local flags,model=mpeek(),unpack_ref(models)
+    -- triggers are not solid
+    model.solid=nil
+
+    -- reference to next target
+    add(checkpoints,{
+      model=model,
+      next=unpack_variant(),
+    })
+    -- starting point?
+    if flags&1!=0 then
+      checkpoints.first=i
+    end
+  end)
+
   -- doors
   unpack_array(function()
     -- standard triggers parameters
@@ -1159,5 +1317,5 @@ function unpack_map()
     end
   end)
 
-  return models,leaves,plyr_pos,plyr_angle
+  return models,leaves,checkpoints,plyr_pos,plyr_angle
 end

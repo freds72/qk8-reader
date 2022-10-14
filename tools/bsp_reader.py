@@ -853,7 +853,8 @@ def pack_bsp(stream, filename, classes, colormap, sprites, only_lightmap):
 
     # all faces
     # maps
-    maps = MapAtlas(32*32)
+    # 0: no predefined sprite sheet
+    maps = MapAtlas(0)
 
     with stream.read(filename) as face_handle:
       s += pack_variant(len(faces))      

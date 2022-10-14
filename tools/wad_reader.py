@@ -143,7 +143,7 @@ def pack_entities(entities, models):
 
   # (supported) triggers
   trigger_filter = re.compile("trigger*")
-  triggers = []  
+  triggers = []    
   for trigger in [e for e in entities if trigger_filter.match(e.classname)]:
     flags = 0
 
@@ -197,6 +197,29 @@ def pack_entities(entities, models):
   # pack "active" triggers
   blob += pack_variant(len(triggers))
   blob += "".join(triggers)
+
+  checkpoint_filter = re.compile("checkpoint")
+  checkpoint_blob = []  
+  all_checkpoints = list([e for e in entities if checkpoint_filter.match(e.classname)])
+  checkpoint_ids = {t.targetname:i for i,t in enumerate(all_checkpoints)}
+  for t in all_checkpoints:
+    flags = 0
+    if not t.target:
+      raise Exception(f"trigger_checkpoint must have a target")        
+    if t.spawnflags&0x1!=0:
+      # starting point
+      logging.info(f"Found track starting point - next checkpoint: {t.target}")
+      flags |= 1
+
+    checkpoint_blob += pack_byte(flags)
+    # brush model reference
+    checkpoint_blob += pack_variant(int(t.model[1:])+1)    
+    # pack reference to next target
+    checkpoint_blob += pack_variant(checkpoint_ids[t.target] + 1)
+  
+  # pack checkpoints
+  blob += pack_variant(len(all_checkpoints))
+  blob += "".join(checkpoint_blob)
 
   doors_filter = re.compile("func_door")
   doors = []
