@@ -136,13 +136,6 @@ function m_x_m(a,b)
 		}
 end
 
--- matrix vector multiply invert
--- inc. position
-function m_inv_x_v(m,v)
-	local x,y,z=v[1]-m[13],v[2]-m[14],v[3]-m[15]
-	return {m[1]*x+m[2]*y+m[3]*z,m[5]*x+m[6]*y+m[7]*z,m[9]*x+m[10]*y+m[11]*z}
-end
-
 -- print helper
 function printb(s,x,y,c0,c1)
   x=x or (64-#tostr(s)/2)
@@ -516,8 +509,7 @@ function bsp_clip(node,poly,out,uvs)
 end
 
 function make_player(pos,a)
-  local angle,dangle,velocity={0,a,0},{0,0,0},{0,0,0,}
-  local fire_ttl=0
+  local angle,dangle,velocity,dead={0,a,0},{0,0,0},{0,0,0,}
 
   -- start above floor
   pos=v_add(pos,{0,1,0})
@@ -539,6 +531,11 @@ function make_player(pos,a)
         self.m=make_m_from_euler(unpack(angle))
       end
     end,
+    kill=function(self)
+      dead=true
+      velocity=v_add(velocity,{rnd(10)-5,10+rnd(5),rnd(10)-5})   
+      -- todo: tilt head / refactor angle damping...   
+    end,
     control=function(self)
       -- move
       local dx,dz,a,jmp=0,0,angle[2],0
@@ -549,7 +546,6 @@ function make_player(pos,a)
       if(btnp(4)) jmp=20
 
       dangle=v_add(dangle,{stat(39),stat(38),dx/4})
-      angle=v_add(angle,dangle,1/1024)
 
       local c,s=cos(a),-sin(a)
       velocity=v_add(velocity,{s*dz-c*dx,jmp-2,c*dz+s*dx})         
@@ -562,6 +558,8 @@ function make_player(pos,a)
       --velocity[2]*=0.9
       velocity[3]*=0.7
              
+      angle=v_add(angle,dangle,1/1024)
+
       -- check next position
       local vn,vl=v_normz(velocity)      
       if vl>0.1 then
@@ -610,6 +608,16 @@ function make_player(pos,a)
 
       self.pos=v_add(self.pos,velocity)
       self.m=make_m_from_euler(unpack(angle))
+
+      -- lava?
+      if not dead then
+        local node=find_sub_sector(_model.bsp,self.pos)
+        if node and node.contents==-5 then
+          -- avoid reentrancy
+          dead=true
+          next_state(gameover_state,false)
+        end
+      end
     end
   } 
 end
@@ -630,9 +638,7 @@ end
 
 -- find if pos is within an empty space
 function is_empty(node,pos)
-  while node.contents==nil or node.contents>0 do
-    node=node[plane_isfront(node.plane,pos)]
-  end  
+  local node=find_sub_sector(node,pos)
   return node.contents!=-1
   --return node.contents!=-2 or node.contents!=-1
 end
@@ -663,9 +669,9 @@ function hitscan(node,p0,p1,out)
   -- crossing a node
   local t=dist-node_dist
   if t<0 then
-    t-=0x0.01
+    t-=0x0.001
   else
-    t+=0x0.01
+    t+=0x0.001
   end  
   -- cliping fraction
   local frac=mid(t/(dist-otherdist),0,1)
@@ -694,55 +700,68 @@ function next_state(state,...)
 	draw_state,update_state=state(...)
 end
 
+function start_state(pos,angle)
+  _cam=make_cam()
+  _plyr=make_player(pos,angle)
+  return
+    -- draw
+    function()
+    end,
+    -- update
+    function()
+			_plyr:control()	
+      _plyr:update()
+      _cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
+    end
+end
+
 function play_state(pos,angle,checkpoints)
   _cam=make_cam()
   _plyr=make_player(pos,angle)
 
 	-- active index
-	local checkpoint,n=checkpoints.first,#checkpoints
+	local checkpoint=checkpoints[checkpoints.first].next
 
 	-- previous laps
 	local laps={}
 
 	-- remaining time before game over (+ some buffer time)
-	local lap_t,total_t,remaining_t,best_t,best_i=0,0,30*75,32000,1
+	local lap_t,total_t,remaining_t,best_t,best_i=0,0,30*checkpoints.ttl,32000,1
 	local extend_time_t=0
 
 	-- go display
 	local start_ttl,go_ttl=90,120
 
-
-	local prev_rank,ranks=1,{"st","nd","rd"}
 	return
 		-- draw
 		function()
-			printb("time",nil,2,6,1)
-      poke(0x5f58, 0x1 | 0x2 | 0x4 | 0x8)
-			printb(tostr(ceil(remaining_t/30)),nil,9,11,1)
-      poke(0x5f58,0)
-      
+			printb("time",2,2,6,1)
+      poke(0x5f58, 0x1 | 0x4 | 0x8 | 0x80)
+			printb(padding(ceil(remaining_t/30)),2,9,11,1)
+      poke(0x5f58, 0x81)
+
 			-- 1/2/3...
 			if start_ttl>0 then
-				local sx=flr(start_ttl/30)*12
-				printb(sx,nil,12,8,0)
+				local sx=flr(start_ttl/30)+1
+				printb(sx,nil,48,12,1)
 			end
 
 			-- blink go!
-			if(go_ttl>0 and go_ttl<30 and go_ttl%4<2) printb("go!",nil,36,8,0)
+			if(go_ttl>0 and go_ttl<30 and go_ttl%4<2) printb("go!",nil,48,13,1)
 
 			-- extend time message
-			if(extend_time_t>0 and extend_time_t%30<15) printb("extend time",nil,28,13,0)
+			if(extend_time_t>0 and extend_time_t%16<8) printb("time extended!",24,96,13,0)
 			
 			-- previous times
-			printb("lap time",95,2,6,1)
+			printb("lap time",72,2,6,1)
 			local y=9
 			for i=1,#laps do
-				printb(i,87,y,10,0)
-				printb(laps[i],95,y,best_i==i and 14 or 7,0)
+				printb(i,64,y,10,0)
+				printb(laps[i],72,y,best_i==i and 14 or 7,0)
 				y+=7
 			end
-			printb(#laps+1,87,y,9,0)
-			printb(time_tostr(lap_t),95,y,4,0)
+			printb(#laps+1,64,y,9,0)
+			printb(time_tostr(lap_t),72,y,4,0)
 		end,
 		-- update
 		function()
@@ -765,43 +784,42 @@ function play_state(pos,angle,checkpoints)
 			end
 
       -- active track?
-      if checkpoint then        
-        local hit = find_sub_sector(checkpoints[checkpoint].model.clipnodes,_plyr.pos)
-        -- inside volume?        
-        if hit and hit.contents==-2 then
-          checkpoint=checkpoints[checkpoint].next
-          remaining_t+=30*10
-          extend_time_t=30*5
+      local hit = find_sub_sector(checkpoints[checkpoint].model.clipnodes,_plyr.pos)
+      -- inside volume?        
+      if hit and hit.contents==-2 then
+        checkpoint=checkpoints[checkpoint].next
+        remaining_t+=30*checkpoints[checkpoint].bonus
+        -- message display time
+        extend_time_t=30*3
 
-          -- time extension!
-          music(extended_time_music)
-          -- placeholder
-          sfx(4)
-          
-          -- closed lap?
-          if checkpoint==checkpoints.first then
-            -- record time
-            add(laps,time_tostr(lap_t))
-            if lap_t<best_t then
-              best_t=lap_t
-              best_i=#laps
+        -- time extension!
+        music(extended_time_music)
+        -- placeholder
+        sfx(4)
+        
+        -- closed lap?
+        if checkpoint==checkpoints.first then
+          -- record time
+          add(laps,time_tostr(lap_t))
+          if lap_t<best_t then
+            best_t=lap_t
+            best_i=#laps
 
-              -- best lap music
-              music(best_lap_music)
-            end
-            -- done?
-            if #laps==3 then
-              next_state(gameover_state,true,total_t,prev_rank)
-            end
-            -- next lap
-            lap_t=0
+            -- best lap music
+            music(best_lap_music)
           end
+          -- done?
+          if #laps==3 then
+            next_state(gameover_state,true,total_t,prev_rank)
+          end
+          -- next lap
+          lap_t=0
         end
-      end
+      end    
 
-			_cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
 			if(start_ttl==0) _plyr:control()	
       _plyr:update()
+			_cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
 		end
 end
 
@@ -818,12 +836,19 @@ function gameover_state(win,total_t,rank)
 
 	music(gameover_music)
 
+  -- not win? kill player
+  if not win then
+    _plyr:kill()
+  end
+
 	return 
 		-- draw
 		function()
-			-- total time
-			printr(time_tostr(total_t).." total time",nil,8,9)
-			if(is_record) printr("track record!",nil,17,8,2)
+      if win then
+  			-- total time
+	  		printb(time_tostr(total_t).." total time",nil,8,9)
+		  	if(is_record) printb("track record!",nil,17,8,2)
+      end
 
 			-- 
 			if ttl%32<16 then
@@ -852,6 +877,10 @@ function gameover_state(win,total_t,rank)
 end
 
 function _init()
+  -- custom quake font
+  ?"\^@56000800⁴⁸⁶\0\0¹\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0³3#⁙3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0000#23³33323333²\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0⁷⁷⁷⁷⁷\0\0\0\0⁷⁷⁷\0\0\0\0\0⁷⁵⁷\0\0\0\0\0⁵²⁵\0\0\0\0\0⁵\0⁵\0\0\0\0\0⁵⁵⁵\0\0\0\0⁴⁶⁷⁶⁴\0\0\0¹³⁷³¹\0\0\0⁷¹¹¹\0\0\0\0\0⁴⁴⁴⁷\0\0\0⁵⁷²⁷²\0\0\0\0\0²\0\0\0\0\0\0\0\0¹²\0\0\0\0\0\0³³\0\0\0⁵⁵\0\0\0\0\0\0²⁵²\0\0\0\0\0\0\0\0\0\0\0\0\0²²²\0²\0\0\0⁵⁵\0\0\0\0\0\0⁵⁷⁵⁷⁵\0\0\0⁷³⁶⁷²\0\0\0⁵⁴²¹⁵\0\0\0³³⁶⁵⁷\0\0\0²¹\0\0\0\0\0\0²¹¹¹²\0\0\0²⁴⁴⁴²\0\0\0⁵²⁷²⁵\0\0\0\0²⁷²\0\0\0\0\0\0\0²¹\0\0\0\0\0⁷\0\0\0\0\0\0\0\0\0²\0\0\0⁴²²²¹\0\0\0゛333゛\0\0\0⁷⁶⁶⁶⁶\0\0\0゜ >¹?\0\0\0゜0、0「⁴\0\000086○0\0\0\0ᶠ¹ᶠ「ᶜ²\0\0ᵉ³゜3゛\0\0\0ᶠ⁸⁴⁶⁶\0\0\0゛3゛3゛\0\0\0゛3>0「⁴\0\0\0⁶⁶\0⁶⁶\0\0\0²\0²¹\0\0\0⁴²¹²⁴\0\0\0\0⁷\0⁷\0\0\0\0¹²⁴²¹\0\0\0⁷⁴⁶\0²\0\0\0²⁵⁵¹⁶\0\0\0\0⁶⁵⁷⁵\0\0\0\0³³⁵⁷\0\0\0\0⁶¹¹⁶\0\0\0\0³⁵⁵³\0\0\0\0⁷³¹⁶\0\0\0\0⁷³¹¹\0\0\0\0⁶¹⁵⁷\0\0\0\0⁵⁵⁷⁵\0\0\0\0⁷²²⁷\0\0\0\0⁷²²³\0\0\0\0⁵³⁵⁵\0\0\0\0¹¹¹⁶\0\0\0\0⁷⁷⁵⁵\0\0\0\0³⁵⁵⁵\0\0\0\0⁶⁵⁵³\0\0\0\0⁶⁵⁷¹\0\0\0\0²⁵³⁶\0\0\0\0³⁵³⁵\0\0\0\0⁶¹⁴³\0\0\0\0⁷²²²\0\0\0\0⁵⁵⁵⁶\0\0\0\0⁵⁵⁷²\0\0\0\0⁵⁵⁷⁷\0\0\0\0⁵²²⁵\0\0\0\0⁵⁷⁴³\0\0\0\0⁷⁴¹⁷\0\0\0³¹¹¹³\0\0\0¹²²²⁴\0\0\0⁶⁴⁴⁴⁶\0\0\0²⁵\0\0\0\0\0\0\0\0\0\0⁷\0\0\0²⁴\0\0\0\0\0\0⁸、◀>31\0\0゜3゜33゜\0\0゛⁙³³⁙゛\0\0゜3333゜\0\0?#ᶠ³#>\0\0>#ᶠ³³³\0\0>#³s36▮\00033?333\0\0⁶⁶⁶⁶⁶⁶\0\0「「「「ᶜ⁶\0\0C3••3#\0\0³³³³#?\0\0cw○omi\0\0CGOYq`\0\0>cccc>\0\0ᶠ•••ᶠ³\0\0\"cCk>⁸⁸\0゜3゜3##\0\0>¹゛01゜\0\0?-ᶜᶜᶜ⁴\0\00033333゛\0\0cw6>、⁸\0\0[[{○6\"\0\0c&ᶜ「6c\0\0001¥ᵉ⁶⁶⁶\0\0゜」ᶜ⁶⁙゜\0\0⁶²³²⁶\0\0\0²²²²²\0\0\0³²⁶²³\0\0\0\0⁴⁷¹\0\0\0\0\0²⁵²\0\0\0\0○○○○○\0\0\0U*U*U\0\0\0A○]]>\0\0\0>ccw>\0\0\0■D■D■\0\0\0⁴<、゛▮\0\0\0、.>>、\0\0\0006>>、⁸\0\0\0、6w6、\0\0\0、、>、⁘\0\0\0、>○*:\0\0\0>gcg>\0\0\0○]○A○\0\0\0008⁸⁸ᵉᵉ\0\0\0>ckc>\0\0\0⁸、>、⁸\0\0\0\0\0U\0\0\0\0\0>scs>\0\0\0⁸、○>\"\0\0\0>、⁸、>\0\0\0>wcc>\0\0\0\0⁵R \0\0\0\0\0■*D\0\0\0\0>kwk>\0\0\0○\0○\0○\0\0\0UUUUU\0\0\0ᵉ⁴゛-&\0\0\0■!!%²\0\0\0ᶜ゛  、\0\0\0⁸゛⁸$¥\0\0\0N⁴>E&\0\0\0\"_□□\n\0\0\0゛⁸<■⁶\0\0\0▮ᶜ²ᶜ▮\0\0\0\"z\"\"□\0\0\0゛ \0²<\0\0\0⁸<▮²ᶜ\0\0\0²²²\"、\0\0\0⁸>⁸ᶜ⁸\0\0\0□?□²、\0\0\0<▮~⁴8\0\0\0²⁷2²2\0\0\0ᶠ²ᵉ▮、\0\0\0>@@ 「\0\0\0>▮⁸⁸▮\0\0\0⁸8⁴²<\0\0\0002⁷□x「\0\0\0zB²\nr\0\0\0\t>Kmf\0\0\0¥'\"s2\0\0\0<JIIF\0\0\0□:□:¥\0\0\0#b\"\"、\0\0\0ᶜ\0⁸*M\0\0\0\0ᶜ□!@\0\0\0}y■=]\0\0\0><⁸゛.\0\0\0⁶$~&▮\0\0\0$N⁴F<\0\0\0\n<ZF0\0\0\0゛⁴゛D8\0\0\0⁘>$⁸⁸\0\0\0:VR0⁸\0\0\0⁴、⁴゛⁶\0\0\0⁸²> 、\0\0\0\"\"& 「\0\0\0>「$r0\0\0\0⁴6,&d\0\0\0>「$B0\0\0\0¥'\"#□\0\0\0ᵉd、(x\0\0\0⁴²⁶+」\0\0\0\0\0ᵉ▮⁸\0\0\0\0\n゜□⁴\0\0\0\0⁴ᶠ‖\r\0\0\0\0⁴ᶜ⁶ᵉ\0\0\0> ⁘⁴²\0\0\0000⁸ᵉ⁸⁸\0\0\0⁸>\" 「\0\0\0>⁸⁸⁸>\0\0\0▮~「⁘□\0\0\0⁴>$\"2\0\0\0⁸>⁸>⁸\0\0\0<$\"▮⁸\0\0\0⁴|□▮⁸\0\0\0>   >\0\0\0$~$ ▮\0\0\0⁶ &▮ᶜ\0\0\0> ▮「&\0\0\0⁴>$⁴8\0\0\0\"$ ▮ᶜ\0\0\0>\"-0ᶜ\0\0\0、⁸>⁸⁴\0\0\0** ▮ᶜ\0\0\0、\0>⁸⁴\0\0\0⁴⁴、$⁴\0\0\0⁸>⁸⁸⁴\0\0\0\0、\0\0>\0\0\0> (▮,\0\0\0⁸>0^⁸\0\0\0   ▮ᵉ\0\0\0▮$$DB\0\0\0²゛²²、\0\0\0>  ▮ᶜ\0\0\0ᶜ□!@\0\0\0\0⁸>⁸**\0\0\0> ⁘⁸▮\0\0\0<\0>\0゛\0\0\0⁸⁴$B~\0\0\0@(▮h⁶\0\0\0゛⁴゛⁴<\0\0\0⁴>$⁴⁴\0\0\0、▮▮▮>\0\0\0゛▮゛▮゛\0\0\0>\0> 「\0\0\0$$$ ▮\0\0\0⁘⁘⁘T2\0\0\0²²\"□ᵉ\0\0\0>\"\"\">\0\0\0>\" ▮ᶜ\0\0\0> < 「\0\0\0⁶  ▮ᵉ\0\0\0\0‖▮⁸⁶\0\0\0\0⁴゛⁘⁴\0\0\0\0\0ᶜ⁸゛\0\0\0\0、「▮、\0\0\0⁸⁴c▮⁸\0\0\0⁸▮c⁴⁸\0\0\0"
+  poke(0x5f58,0x81)
+
   -- enable tile 0 + extended memory
   poke(0x5f36, 0x18)
   -- capture mouse
@@ -869,8 +898,12 @@ function _init()
   palt(0,false)
   --pal({129, 133, 5, 134, 143, 15, 130, 132, 4, 137, 9, 136, 8, 13, 12},1,1)
 
-  -- 
-  next_state(play_state,pos,angle,_checkpoints)
+  -- start level or game level?
+  if #_checkpoints>0 then
+    next_state(play_state,pos,angle,_checkpoints)
+  else
+    next_state(start_state,pos,angle)
+  end
 end
 
 function _update()
@@ -1281,10 +1314,13 @@ function unpack_map()
     add(checkpoints,{
       model=model,
       next=unpack_variant(),
+      bonus=unpack_variant()
     })
     -- starting point?
     if flags&1!=0 then
       checkpoints.first=i
+      -- initial track time
+      checkpoints.ttl=unpack_variant()
     end
   end)
 

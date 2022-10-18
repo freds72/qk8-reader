@@ -174,7 +174,7 @@ def pack_entities(entities, models):
       trigger_blob += pack_variant(len(targets))
       for t in targets:        
         # target position
-        trigger_blob += pack_vec3(xyz_add(t.origin, dotdict({'x':0,'y':0,'z':27})))
+        trigger_blob += pack_vec3(xyz_add(t.origin, dotdict({'x':0,'y':27,'z':0})))
         # angle
         angle = t.get("angle",0)
         if angle==-1:
@@ -205,17 +205,24 @@ def pack_entities(entities, models):
   for t in all_checkpoints:
     flags = 0
     if not t.target:
-      raise Exception(f"trigger_checkpoint must have a target")        
+      raise Exception(f"trigger_checkpoint must have a target")
+    startup_time = None
     if t.spawnflags&0x1!=0:
       # starting point
       logging.info(f"Found track starting point - next checkpoint: {t.target}")
-      flags |= 1
+      flags |= 1      
+      startup_time = int(t.get("delay",15))
 
     checkpoint_blob += pack_byte(flags)
     # brush model reference
-    checkpoint_blob += pack_variant(int(t.model[1:])+1)    
+    checkpoint_blob += pack_variant(int(t.model[1:])+1)
     # pack reference to next target
     checkpoint_blob += pack_variant(checkpoint_ids[t.target] + 1)
+    # pack bonus time
+    checkpoint_blob += pack_variant(t.get("bonus",5))
+    if startup_time:
+      checkpoint_blob += pack_variant(startup_time)
+    
   
   # pack checkpoints
   blob += pack_variant(len(all_checkpoints))
