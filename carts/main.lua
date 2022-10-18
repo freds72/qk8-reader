@@ -569,17 +569,20 @@ function make_player(pos,a)
         -- check current to target pos
         for i=1,3 do
           local hits,hitmodel={t=32000}
-          for k,model in pairs(_bsps) do
-            local tmphits={}                      
+          --for k,model in pairs(_bsps) do
+          local model=_model
+          if model.solid then
+            local tmphits={
+              t=1,
+              all_solid=true
+            }                     
+            hitscan(model.clipnodes,v_add(self.pos,model.origin,-1),v_add(next_pos,model.origin,-1),tmphits)            
             -- convert into model's space (mostly zero except moving brushes)
-            if model.solid and hitscan(model.clipnodes,v_add(self.pos,model.origin,-1),v_add(next_pos,model.origin,-1),tmphits) and tmphits.n and tmphits.t<hits.t then
+            if tmphits.n and tmphits.t<hits.t then
               hits=tmphits
-              hitmodel=model
             end
           end
           if hits.n then
-            -- trigger action?
-            if(hitmodel.touch) hitmodel.touch()
             local fix=v_dot(hits.n,velocity)
             -- separating?
             if fix<0 then
@@ -612,7 +615,8 @@ function make_player(pos,a)
       -- lava?
       if not dead then
         local node=find_sub_sector(_model.bsp,self.pos)
-        if node and node.contents==-5 then
+        if(node.contents!=-1) printh("content: "..node.contents)
+        if node.contents==-5 then
           -- avoid reentrancy
           dead=true
           next_state(gameover_state,false)
@@ -627,13 +631,10 @@ end
 
 -- find in what convex leaf pos is
 function find_sub_sector(node,pos)
-  while node do
+  while not node.contents do
     node=node[plane_isfront(node.plane,pos)]
-    if node and node.contents then
-      -- leaf?
-      return node
-    end
   end
+  return node
 end
 
 -- find if pos is within an empty space
@@ -648,50 +649,62 @@ end
 -- https://github.com/id-Software/Quake/blob/bf4ac424ce754894ac8f1dae6a3981954bc9852d/QW/client/pmovetst.c
 -- https://developer.valvesoftware.com/wiki/BSP
 -- ray/bsp intersection
-function hitscan(node,p0,p1,out)
-  -- is "solid" space (bsp)
-  if(not node) return true
-  local contents=node.contents
+function ray_bsp_intersect(node,p0,p1,t0,t1,out)
+  local contents=node.contents  
   if contents then
-    -- is "solid" space (bsp)
-    if(contents==-2) return true
-    -- in "empty" space
-    if(contents<0) return
+      -- is "solid" space (bsp)
+      if contents!=-2 then
+          out.all_solid = false
+          if contents==-1 then
+              out.in_open = true
+          else
+              out.in_water = true
+          end
+      else
+          out.start_solid = true
+      end
+      -- empty space
+      return true
   end
-
   local dist,node_dist=plane_dot(node.plane,p0)
   local otherdist=plane_dot(node.plane,p1)
   local side,otherside=dist>node_dist,otherdist>node_dist
   if side==otherside then
-    -- go down this side
-    return hitscan(node[side],p0,p1,out)
+      -- go down this side
+      return ray_bsp_intersect(node[side],p0,p1,t0,t1,out)
   end
   -- crossing a node
   local t=dist-node_dist
   if t<0 then
-    t-=0x0.001
+      t=t-0.03125
   else
-    t+=0x0.001
+      t=t+0.03125
   end  
   -- cliping fraction
   local frac=mid(t/(dist-otherdist),0,1)
-  local p10=v_lerp(p0,p1,frac)
-  --add(out,p10)
-  local hit,otherhit=hitscan(node[side],p0,p10,out),hitscan(node[otherside],p10,p1,out)  
-  if hit!=otherhit then
-    -- not already registered?
-    if not out.n then
-      -- check if in global empty space
-      -- note: nodes do not have spatial relationships!!
-      if is_empty(_model.clipnodes,p10) then
-        local scale=t<0 and -1 or 1
-        local nx,ny,nz=plane_get(node.plane)
-        out.n={scale*nx,scale*ny,scale*nz,node_dist}
-        out.t=frac
-      end
-    end
+  local tmid,pmid=lerp(t0,t1,frac),v_lerp(p0,p1,frac)
+  if not ray_bsp_intersect(node[side],p0,pmid,t0,tmid,out) then
+    return
   end
-  return hit or otherhit
+
+  if find_sub_sector(node[not side],pmid).contents != -2 then
+    return ray_bsp_intersect(node[not side],pmid,p1,tmid,t1,out)
+  end
+
+  -- never got out of the solid area
+  if out.all_solid then
+    return
+  end
+
+  local scale=side and 1 or -1
+  local nx,ny,nz=plane_get(node.plane)
+  out.n = {scale*nx,scale*ny,scale*nz,node_dist}
+  out.t = tmid
+  out.pos = pmid
+end
+
+function hitscan(node,p0,p1,out)
+  return ray_bsp_intersect(node,p0,p1,0,1,out)
 end
 
 -- game states
@@ -1195,10 +1208,10 @@ function unpack_map()
   for _,node in pairs(nodes) do
     local function attach_node(side,leaf)
       local refs=leaf and leaves or nodes
-      local child=refs[node[side]]
+      local child=refs[node[side]] or {contents=-2}
       node[side]=child
       -- used to optimize bsp traversal for rendering
-      if(child) child.parent=node
+      child.parent=node
     end
     attach_node(true,node.flags&0x1!=0)
     attach_node(false,node.flags&0x2!=0)
