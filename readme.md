@@ -5,9 +5,14 @@
 + Pico 8 0.2.5+
 + Python 3.9+
 + (optional) local env
-+ TQDM library
++ Python dependencies
 
-```pip install tqdm```
+```
+pip install antlr4-python3-runtime
+pip install tqdm
+pip install pillow
+```
+
 + Trenchbroom
 + Copy tools/q8k.fgd file to ```%appdata%\Trenchbroom\games\q8k\```
 > note: colormap and palette lump files are located in repo in ```id1\gfx```
