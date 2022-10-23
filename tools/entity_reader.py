@@ -28,7 +28,7 @@ class ENTITYWalker(ENTITYListener):
           x,y,z=[float(v) for v in value.split(' ')]
           # fix Quake y/z orientation
           value=dotdict({'x':x,'y':z,'z':y})
-        elif attribute in ['angle','speed','spawnflags','_lightmap_scale','lip']:
+        elif attribute in ['angle','speed','spawnflags','_lightmap_scale','lip','checkpoint','bonus']:
           value=int(value)
         elif attribute in ['delay','wait']:
           value=float(value)        

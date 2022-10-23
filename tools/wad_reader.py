@@ -52,6 +52,9 @@ def compress_byte_str(s,raw=False,more=False):
 def pack_sprite(arr):
     return ["".join(map("{:02x}".format,arr[i*4:i*4+4])) for i in range(8)]
 
+def xyz_add(a,b):
+  return dotdict({k:a[k]+b[k] for k in ['x','y','z']})
+
 def to_gamecart(carts_path, name, map_data, gfx_data, compress=False, release=None):
   cart="""\
 pico-8 cartridge // http://www.pico-8.com
@@ -140,7 +143,7 @@ def pack_entities(entities, models):
 
   # (supported) triggers
   trigger_filter = re.compile("trigger*")
-  triggers = []  
+  triggers = []    
   for trigger in [e for e in entities if trigger_filter.match(e.classname)]:
     flags = 0
 
@@ -160,6 +163,33 @@ def pack_entities(entities, models):
       flags |= 1
       # cancel negative values for wait
       trigger_blob += pack_variant(max(0,int(trigger.wait*30)))
+    elif trigger.classname == "trigger_teleport":
+      flags |= 4
+      # find all matching targets
+      target = trigger.get("target", None)
+      if not target:
+        raise Exception(f"Missing target for: {trigger.classname}")
+      targets = [e for e in entities if e.get("targetname","")==target and e.classname=="info_teleport_destination"]
+      # pack all matching destination points
+      trigger_blob += pack_variant(len(targets))
+      for t in targets:        
+        # target position
+        trigger_blob += pack_vec3(xyz_add(t.origin, dotdict({'x':0,'y':27,'z':0})))
+        # angle
+        angle = t.get("angle",0)
+        if angle==-1:
+          trigger_blob += pack_vec3(dotdict({'x':0,'y':1,'z':0}))
+          trigger_blob += pack_fixed(0)
+        elif angle==-2:
+          trigger_blob += pack_vec3(dotdict({'x':0,'y':-1,'z':0}))
+          trigger_blob += pack_fixed(0)
+        else:
+          flags |= 8
+          trigger_blob += pack_vec3(dotdict({'x':math.cos(math.pi*angle/180),'y':0,'z':math.sin(math.pi*angle/180)}))
+          # store angle
+          # angle -= 90
+          angle += 180
+          trigger_blob += pack_fixed(angle/360)
 
     # put decoding flag first
     triggers.append(pack_byte(flags) + trigger_blob)
@@ -167,6 +197,36 @@ def pack_entities(entities, models):
   # pack "active" triggers
   blob += pack_variant(len(triggers))
   blob += "".join(triggers)
+
+  checkpoint_filter = re.compile("checkpoint")
+  checkpoint_blob = []  
+  all_checkpoints = list([e for e in entities if checkpoint_filter.match(e.classname)])
+  checkpoint_ids = {t.targetname:i for i,t in enumerate(all_checkpoints)}
+  for t in all_checkpoints:
+    flags = 0
+    if not t.target:
+      raise Exception(f"trigger_checkpoint must have a target")
+    startup_time = None
+    if t.spawnflags&0x1!=0:
+      # starting point
+      logging.info(f"Found track starting point - next checkpoint: {t.target}")
+      flags |= 1      
+      startup_time = int(t.get("delay",15))
+
+    checkpoint_blob += pack_byte(flags)
+    # brush model reference
+    checkpoint_blob += pack_variant(int(t.model[1:])+1)
+    # pack reference to next target
+    checkpoint_blob += pack_variant(checkpoint_ids[t.target] + 1)
+    # pack bonus time
+    checkpoint_blob += pack_variant(t.get("bonus",5))
+    if startup_time:
+      checkpoint_blob += pack_variant(startup_time)
+    
+  
+  # pack checkpoints
+  blob += pack_variant(len(all_checkpoints))
+  blob += "".join(checkpoint_blob)
 
   doors_filter = re.compile("func_door")
   doors = []

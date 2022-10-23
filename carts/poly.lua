@@ -60,7 +60,7 @@ function polytex_ymajor(p,np,angle)
 	--data for left & right edges:
 	local lj,rj,ly,ry,lx,ldx,rx,rdx,lu,ldu,lv,ldv,ru,rdu,rv,rdv,lw,ldw,rw,rdw=mini,mini,miny-1,miny-1
 
-	local stride=max(3,(6*(1-angle))\1)
+	local stride=max(3,(7*(1-angle))\1)
 	local len=1<<stride
 	--step through scanlines.
 	if(maxy>127) maxy=127
@@ -72,16 +72,17 @@ function polytex_ymajor(p,np,angle)
 			lj+=1
 			if (lj>np) lj=1
 			local v1=p[lj]
-			local y0,y1=v0.y,v1.y
+			local y0,y1,w1=v0.y,v1.y,v1.w
+			local dy=y1-y0
 			ly=y1&-1
 			lx=v0.x
 			lw=v0.w
 			lu=v0.u*lw
 			lv=v0.v*lw
-			ldx=(v1.x-lx)/(y1-y0)
-			ldu=(v1.u*v1.w-lu)/(y1-y0)
-			ldv=(v1.v*v1.w-lv)/(y1-y0)
-			ldw=(v1.w-lw)/(y1-y0)
+			ldx=(v1.x-lx)/dy
+			ldu=(v1.u*w1-lu)/dy
+			ldv=(v1.v*w1-lv)/dy
+			ldw=(w1-lw)/dy
 			--sub-pixel correction
 			local dy=y-y0
 			lx+=dy*ldx
@@ -94,16 +95,17 @@ function polytex_ymajor(p,np,angle)
 			rj-=1
 			if (rj<1) rj=np
 			local v1=p[rj]
-			local y0,y1=v0.y,v1.y
+			local y0,y1,w1=v0.y,v1.y,v1.w
+			local dy=y1-y0
 			ry=y1&-1
 			rx=v0.x
 			rw=v0.w
 			ru=v0.u*rw
 			rv=v0.v*rw
-			rdx=(v1.x-rx)/(y1-y0)
-			rdu=(v1.u*v1.w-ru)/(y1-y0)
-			rdv=(v1.v*v1.w-rv)/(y1-y0)
-			rdw=(v1.w-rw)/(y1-y0)
+			rdx=(v1.x-rx)/dy
+			rdu=(v1.u*w1-ru)/dy
+			rdv=(v1.v*w1-rv)/dy
+			rdw=(w1-rw)/dy
 			--sub-pixel correction
 			local dy=y-y0
 			rx+=dy*rdx
@@ -135,7 +137,7 @@ function polytex_ymajor(p,np,angle)
 				local u,v=ru/rw,rv/rw
 				rw+=ddw
 				tline(x,y,x+len-1,y,u,v,((ddu-u*ddw)/rw)>>stride,((ddv-v*ddw)/rw)>>stride)
-				-- pset(x+len-1,y,15)
+				--pset(x+len-0.5,y,15)
 				ru+=ddu
 				rv+=ddv
 			end
@@ -150,7 +152,7 @@ function polytex_ymajor(p,np,angle)
 		rv+=rdv
 		rw+=rdw
 	end
-	poke(0x5f22,127)
+	poke(0x5f22,128)
 end
 
 
@@ -168,7 +170,7 @@ function polytex_xmajor(p,np,angle)
 	--data for left & right edges:
 	local lj,rj,lx,rx,ly,ldy,ry,rdy,lu,ldu,lv,ldv,ru,rdu,rv,rdv,lw,ldw,rw,rdw=mini,mini,minx-1,minx-1
 
-	local stride=max(3,(6*(1-angle))\1)
+	local stride=max(3,(7*(1-angle))\1)
 	local len=1<<stride
 
 	--step through scanlines.
@@ -247,7 +249,7 @@ function polytex_xmajor(p,np,angle)
 				rw+=ddw
 				tline(x,y,x,y+len-1,u,v,((ddu-u*ddw)/rw)>>stride,((ddv-v*ddw)/rw)>>stride)
 				--printh(rw.." "..ddu.." "..(ddu-u*ddw).." @"..stride)
-				-- pset(x,y+len-1,12)
+				-- pset(x,y+len-0.5,12)
 				ru+=ddu
 				rv+=ddv
 			end
@@ -262,5 +264,5 @@ function polytex_xmajor(p,np,angle)
 		rv+=rdv
 		rw+=rdw
 	end
-	poke(0x5f23,127)
+	poke(0x5f23,128)
 end
