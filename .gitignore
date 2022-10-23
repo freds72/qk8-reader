@@ -20,6 +20,11 @@ _label.png
 /maps/autosave
 *.blend1
 /env/
+/id1/autosave
+/id1/maps/*.log
+/id1/maps/*.bsp
+/id1/maps/*.prt
+/id1/maps/*-compile.map
 
 
 
