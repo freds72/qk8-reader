@@ -286,7 +286,8 @@ def pack_archive(pico_path, carts_path, stream, mapname, compress=False, release
   # get "game classes" (FGD)
   fgd_classes = {}
   # todo: parameter
-  filename = "C:\\Users\\Frederic\\AppData\\Roaming\\TrenchBroom\\games\\q8k\\q8k.fgd"
+  filename = os.path.join(os.getenv('APPDATA'),"TrenchBroom","games","q8k","q8k.fgd")
+  logging.info(f"Found FGD file at: {filename}")
   with open(filename,'r') as f:
     reader = FGDReader(f.read())
     fgd_classes = reader.result
