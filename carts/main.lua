@@ -138,7 +138,7 @@ end
 
 -- print helper
 function printb(s,x,y,c0,c1)
-  x=x or (64-#tostr(s)/2)
+  x=x or (64-print(s,0,-128)/2)
   ?s,x,y+1,c1
   ?s,x,y,c0
 end
@@ -615,7 +615,6 @@ function make_player(pos,a)
       -- lava?
       if not dead then
         local node=find_sub_sector(_model.bsp,self.pos)
-        if(node.contents!=-1) printh("content: "..node.contents)
         if node.contents==-5 then
           -- avoid reentrancy
           dead=true
@@ -723,8 +722,6 @@ function start_state(pos,angle)
     -- update
     function()
 			_plyr:control()	
-      _plyr:update()
-      _cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
     end
 end
 
@@ -831,8 +828,6 @@ function play_state(pos,angle,checkpoints)
       end    
 
 			if(start_ttl==0) _plyr:control()	
-      _plyr:update()
-			_cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
 		end
 end
 
@@ -933,6 +928,11 @@ function _update()
   end
 
 	update_state()
+
+  -- always update
+  _plyr:update()
+  -- always track
+  _cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
 end
 
 function padding(n)
@@ -991,7 +991,7 @@ function _draw()
   
   draw_state()
 
-  if(_msg) print(_msg,64-2*#_msg,80,4)
+  if(_msg) printb(_msg,nil,80,6,1)
   -- set screen palette (color ramp 8 is neutral)
   memcpy(0x5f10,0x4300+16*8,16)
 end
