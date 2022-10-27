@@ -442,8 +442,6 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
   baselight = 0 #face.styles[1]
   mapid = -1
 
-  # face color match
-  color_re = re.compile("0x00*")
   if face.tex_id!=-1:
     # find texture
     tex = textures[face.tex_id]
@@ -566,9 +564,6 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
         baselight = 11
         is_texture = False
       # elif tex_name == "*lava":
-      elif color_re.match(tex_name):
-        # decode color
-        baselight = [index for index,c in colormap.items() if int(tex_name[4:6],16)==c.hw][0]
       else:
         # copy texture verbatim
         for y in range(mip.height):
@@ -579,6 +574,8 @@ def pack_face(bsp_handle, id, face, colormap, sprites, maps, only_lightmap, ligh
             shaded_tex.append(color.id)
         # baselight = 0xff (makes no sense = full dark)
         if tex_name[0] == "*":
+          # transparent texture
+          flags |= 0x10
           baselight = 11
         # todo: find another way...        
       # full dark?

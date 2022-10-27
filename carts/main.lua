@@ -325,11 +325,16 @@ function make_cam()
                       fv_cache[fn]=v
                     end
 
+                    if flags&0x10!=0 then
+                      fillp(0xa5a5.c)
+                    end
+
                     if u>v then
                       polytex_xmajor(pts,np,v)
                     else
                       polytex_ymajor(pts,np,u)
                     end
+                    fillp()
                   else
                     -- sky?
                     polyfill(pts,np,0)
