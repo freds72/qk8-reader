@@ -4,8 +4,7 @@ function polyfill(p,np,c)
 	local miny,maxy,mini=32000,-32000
 	-- find extent
 	for i=1,np do
-		local v=p[i]
-		local y=v.y
+		local y=p[i].y
 		if (y<miny) mini,miny=i,y
 		if (y>maxy) maxy=y
 	end
@@ -51,8 +50,7 @@ function polytex_ymajor(p,np,angle)
 	local miny,maxy,mini=32000,-32000
 	-- find extent
 	for i=1,np do
-		local v=p[i]
-		local y=v.y
+		local y=p[i].y
 		if (y<miny) mini,miny=i,y
 		if (y>maxy) maxy=y
 	end
@@ -72,11 +70,12 @@ function polytex_ymajor(p,np,angle)
 			lj+=1
 			if (lj>np) lj=1
 			local v1=p[lj]
-			local y0,y1,w1=v0.y,v1.y,v1.w
+			-- make sure w gets enough precision
+			local y0,y1,w1=v0.y,v1.y,v1.w<<4
 			local dy=y1-y0
 			ly=y1&-1
 			lx=v0.x
-			lw=v0.w
+			lw=v0.w<<4
 			lu=v0.u*lw
 			lv=v0.v*lw
 			ldx=(v1.x-lx)/dy
@@ -95,11 +94,11 @@ function polytex_ymajor(p,np,angle)
 			rj-=1
 			if (rj<1) rj=np
 			local v1=p[rj]
-			local y0,y1,w1=v0.y,v1.y,v1.w
+			local y0,y1,w1=v0.y,v1.y,v1.w<<4
 			local dy=y1-y0
 			ry=y1&-1
 			rx=v0.x
-			rw=v0.w
+			rw=v0.w<<4
 			ru=v0.u*rw
 			rv=v0.v*rw
 			rdx=(v1.x-rx)/dy
@@ -161,8 +160,7 @@ function polytex_xmajor(p,np,angle)
 	local minx,maxx,mini=32000,-32000
 	-- find extent
 	for i=1,np do
-		local v=p[i]
-		local x=v.x
+		local x=p[i].x
 		if (x<minx) mini,minx=i,x
 		if (x>maxx) maxx=x
 	end
@@ -183,17 +181,17 @@ function polytex_xmajor(p,np,angle)
 			lj+=1
 			if (lj>np) lj=1
 			local v1=p[lj]
-			local x0,x1=v0.x,v1.x
+			local x0,x1,w1=v0.x,v1.x,v1.w<<4
 			lx=x1&-1
 			ly=v0.y
-			lw=v0.w
+			lw=v0.w<<4
 			lu=v0.u*lw
 			lv=v0.v*lw
 			local dx=x1-x0
 			ldy=(v1.y-ly)/dx
-			ldu=(v1.u*v1.w-lu)/dx
-			ldv=(v1.v*v1.w-lv)/dx
-			ldw=(v1.w-lw)/dx
+			ldu=(v1.u*w1-lu)/dx
+			ldv=(v1.v*w1-lv)/dx
+			ldw=(w1-lw)/dx
 			--sub-pixel correction
 			dx=x-x0
 			ly+=dx*ldy
@@ -206,17 +204,17 @@ function polytex_xmajor(p,np,angle)
 			rj-=1
 			if (rj<1) rj=np
 			local v1=p[rj]
-			local x0,x1=v0.x,v1.x
+			local x0,x1,w1=v0.x,v1.x,v1.w<<4
 			rx=x1&-1
 			ry=v0.y
-			rw=v0.w
+			rw=v0.w<<4
 			ru=v0.u*rw
 			rv=v0.v*rw
 			local dx=x1-x0
 			rdy=(v1.y-ry)/dx
-			rdu=(v1.u*v1.w-ru)/dx
-			rdv=(v1.v*v1.w-rv)/dx
-			rdw=(v1.w-rw)/dx
+			rdu=(v1.u*w1-ru)/dx
+			rdv=(v1.v*w1-rv)/dx
+			rdw=(w1-rw)/dx
 			--sub-pixel correction
 			dx=x-x0
 			ry+=dx*rdy
@@ -224,7 +222,7 @@ function polytex_xmajor(p,np,angle)
 			rv+=dx*rdv
 			rw+=dx*rdw
 		end
-		--rectfill(rx,y,lx,y,12)
+		--rectfill(rx,y,lx,y,)
 		do
 			local ry,ly,ru,rv,rw,lu,lv,lw=ly,ry,lu,lv,lw,ru,rv,rw
 			local ddy=ly-ry--((lx+0x1.ffff)&-1)-(rx&-1)
