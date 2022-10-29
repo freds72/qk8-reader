@@ -84,10 +84,11 @@ function polytex_ymajor(p,np,angle)
 			ldw=(w1-lw)/dy
 			--sub-pixel correction
 			local dy=y-y0
-			lx+=dy*ldx
-			lu+=dy*ldu
-			lv+=dy*ldv
-			lw+=dy*ldw
+			-- to be fixed when += stops evaluating twice!!
+			lx=lx+dy*ldx
+			lu=lu+dy*ldu
+			lv=lv+dy*ldv
+			lw=lw+dy*ldw
 		end   
 		while ry<y do
 			local v0=p[rj]
@@ -107,10 +108,11 @@ function polytex_ymajor(p,np,angle)
 			rdw=(w1-rw)/dy
 			--sub-pixel correction
 			local dy=y-y0
-			rx+=dy*rdx
-			ru+=dy*rdu
-			rv+=dy*rdv
-			rw+=dy*rdw
+			-- to be fixed when += stops evaluating twice!!
+			rx=rx+dy*rdx
+			ru=ru+dy*rdu
+			rv=rv+dy*rdv
+			rw=rw+dy*rdw
 		end
 		--rectfill(rx,y,lx,y,12)
 		do
@@ -119,9 +121,9 @@ function polytex_ymajor(p,np,angle)
 			local ddu,ddv,ddw=(lu-ru)/ddx,(lv-rv)/ddx,(lw-rw)/ddx
 			if(rx<0) ru-=rx*ddu rv-=rx*ddv rw-=rx*ddw rx=0
 			local pix=1-rx&0x0.ffff
-			ru+=pix*ddu
-			rv+=pix*ddv
-			rw+=pix*ddw
+			ru=ru+pix*ddu
+			rv=rv+pix*ddv
+			rw=rw+pix*ddw
 
 			-- stride factor
 			ddu<<=stride
@@ -194,10 +196,10 @@ function polytex_xmajor(p,np,angle)
 			ldw=(w1-lw)/dx
 			--sub-pixel correction
 			dx=x-x0
-			ly+=dx*ldy
-			lu+=dx*ldu
-			lv+=dx*ldv
-			lw+=dx*ldw
+			ly=ly+dx*ldy
+			lu=lu+dx*ldu
+			lv=lv+dx*ldv
+			lw=lw+dx*ldw
 		end   
 		while rx<x do
 			local v0=p[rj]
@@ -217,10 +219,10 @@ function polytex_xmajor(p,np,angle)
 			rdw=(w1-rw)/dx
 			--sub-pixel correction
 			dx=x-x0
-			ry+=dx*rdy
-			ru+=dx*rdu
-			rv+=dx*rdv
-			rw+=dx*rdw
+			ry=ry+dx*rdy
+			ru=ru+dx*rdu
+			rv=rv+dx*rdv
+			rw=rw+dx*rdw
 		end
 		--rectfill(rx,y,lx,y,)
 		do
@@ -229,9 +231,9 @@ function polytex_xmajor(p,np,angle)
 			local ddu,ddv,ddw=(lu-ru)/ddy,(lv-rv)/ddy,(lw-rw)/ddy
 			if(ry<0) ru-=ry*ddu rv-=ry*ddv rw-=ry*ddw ry=0
 			local pix=1-ry&0x0.ffff
-			ru+=pix*ddu
-			rv+=pix*ddv
-			rw+=pix*ddw
+			ru=ru+pix*ddu
+			rv=rv+pix*ddv
+			rw=rw+pix*ddw
 
 			-- stride factor
 			ddu<<=stride

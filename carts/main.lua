@@ -2,7 +2,7 @@
 -- by @freds72
 
 -- game globals
-local _particles,_futures,_cam,_plyr,_model,_leaves,_bsps,_models={},{}
+local _particles,_futures,_cam,_plyr,_model,_leaves,_bsps,_models,_start_pos,_start_angle={},{}
 local plane_dot,plane_isfront,plane_get
 
 -- lightmap memory address + flat u/v array + bsp content types
@@ -276,8 +276,9 @@ function make_cam()
               local np=#face_verts
               for k,vi in pairs(face_verts) do                
                 local a=v_cache[vi]
-                outcode&=a.outcode
-                clipcode+=a.outcode&2
+                local code=a.outcode
+                outcode&=code
+                clipcode+=code&2
                 pts[k]=a              
                 if uvi!=-1 then
                   local kuv=uvi+(k<<1)
@@ -509,12 +510,12 @@ function bsp_clip(node,poly,out,uvs)
 end
 
 function make_player(pos,a)
-  local angle,dangle,velocity,dead={0,a,0},{0,0,0},{0,0,0,}
+  local angle,dangle,velocity,dead,deadangle={0,a,0},{0,0,0},{0,0,0,}
 
   -- start above floor
   pos=v_add(pos,{0,1,0})
   return {
-    pos=pos,
+    pos=pos,    
     m=make_m_from_euler(unpack(angle)),
     -- change orientation
     orient=function(self,pos,dir,a)
@@ -531,11 +532,6 @@ function make_player(pos,a)
         self.m=make_m_from_euler(unpack(angle))
       end
     end,
-    kill=function(self)
-      dead=true
-      velocity=v_add(velocity,{rnd(10)-5,10+rnd(5),rnd(10)-5})   
-      -- todo: tilt head / refactor angle damping...   
-    end,
     control=function(self)
       -- move
       local dx,dz,a,jmp=0,0,angle[2],0
@@ -548,7 +544,7 @@ function make_player(pos,a)
       dangle=v_add(dangle,{stat(39),stat(38),dx/4})
 
       local c,s=cos(a),-sin(a)
-      velocity=v_add(velocity,{s*dz-c*dx,jmp-2,c*dz+s*dx})         
+      velocity=v_add(velocity,{s*dz-c*dx,jmp,c*dz+s*dx})         
     end,
     update=function(self)
       -- damping      
@@ -557,8 +553,14 @@ function make_player(pos,a)
       velocity[1]*=0.7
       --velocity[2]*=0.9
       velocity[3]*=0.7
-             
-      angle=v_add(angle,dangle,1/1024)
+      -- gravity
+      velocity[2]-=2
+
+      if dead then
+        angle=v_lerp(angle,deadangle,0.6)
+      else
+        angle=v_add(angle,dangle,1/1024)
+      end
 
       -- check next position
       local vn,vl=v_normz(velocity)      
@@ -610,17 +612,22 @@ function make_player(pos,a)
       end
 
       self.pos=v_add(self.pos,velocity)
+      self.eye_pos=v_add(_plyr.pos,dead and {0,2,0} or {0,24,0},0.6)      
       self.m=make_m_from_euler(unpack(angle))
-
+      
       -- lava?
       if not dead then
         local node=find_sub_sector(_model.bsp,self.pos)
         if node.contents==-5 then
           -- avoid reentrancy
           dead=true
+          deadangle=v_clone(angle)
+          deadangle[3]=rnd()>0.5 and 0.1 or -0.1
+          velocity=v_add(velocity,{rnd(10)-5,25+rnd(5),rnd(10)-5})   
+            
           next_state(gameover_state,false)
         end
-      end
+      end      
     end
   } 
 end
@@ -789,7 +796,7 @@ function play_state(pos,angle,checkpoints)
 			end
 
 			if remaining_t==0 then
-				next_state(gameover_state,false,total_t,prev_rank)
+				next_state(gameover_state,false,total_t)
 				return
 			end
 
@@ -820,7 +827,7 @@ function play_state(pos,angle,checkpoints)
           end
           -- done?
           if #laps==3 then
-            next_state(gameover_state,true,total_t,prev_rank)
+            next_state(gameover_state,true,total_t)
           end
           -- next lap
           lap_t=0
@@ -831,23 +838,19 @@ function play_state(pos,angle,checkpoints)
 		end
 end
 
-function gameover_state(win,total_t,rank)
-	local ttl,angle,prev_best_t=900,-0.5,dget(track.id)	
+function gameover_state(win,total_t)
+  -- todo: allocate "track" ID for saving
+	local ttl,angle,prev_best_t=900,-0.5,dget(0)	
 	--  or record?
 	local is_record=win and (total_t<prev_best_t or prev_best_t==0)
 	if is_record then
 		-- save new record
-		dset(track.id,total_t)
+		dset(0,total_t)
 	end
 	-- record initial button state (avoid auto-skip screen)
 	local last_btn,btn_press=btn(4),0
 
 	music(gameover_music)
-
-  -- not win? kill player
-  if not win then
-    _plyr:kill()
-  end
 
 	return 
 		-- draw
@@ -860,9 +863,8 @@ function gameover_state(win,total_t,rank)
 
 			-- 
 			if ttl%32<16 then
-				printr("❎ select track",nil,57,9,4)
-			else			
-				printr("🅾️ try again",nil,57,10,9)
+				printb("🅾️ try again",nil,67,10,9)
+				printb("❎ start menu",nil,57,9,4)
 			end
 		end,
 		-- update
@@ -876,7 +878,7 @@ function gameover_state(win,total_t,rank)
 			end
 
 			if btn_press>1 or ttl<0 then
-				next_state(play_state,track.checkpoints)
+				next_state(play_state,_start_pos,_start_angle,_checkpoints)
 			elseif btnp(5) then
 				-- back to selection title
 				load("qk.p8")
@@ -885,6 +887,7 @@ function gameover_state(win,total_t,rank)
 end
 
 function _init()
+  cartdata("q8k")
   -- custom quake font
   ?"\^@56000800⁴⁸⁶\0\0¹\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0³3#⁙3\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0000#23³33323333²\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0\0⁷⁷⁷⁷⁷\0\0\0\0⁷⁷⁷\0\0\0\0\0⁷⁵⁷\0\0\0\0\0⁵²⁵\0\0\0\0\0⁵\0⁵\0\0\0\0\0⁵⁵⁵\0\0\0\0⁴⁶⁷⁶⁴\0\0\0¹³⁷³¹\0\0\0⁷¹¹¹\0\0\0\0\0⁴⁴⁴⁷\0\0\0⁵⁷²⁷²\0\0\0\0\0²\0\0\0\0\0\0\0\0¹²\0\0\0\0\0\0³³\0\0\0⁵⁵\0\0\0\0\0\0²⁵²\0\0\0\0\0\0\0\0\0\0\0\0\0²²²\0²\0\0\0⁵⁵\0\0\0\0\0\0⁵⁷⁵⁷⁵\0\0\0⁷³⁶⁷²\0\0\0⁵⁴²¹⁵\0\0\0³³⁶⁵⁷\0\0\0²¹\0\0\0\0\0\0²¹¹¹²\0\0\0²⁴⁴⁴²\0\0\0⁵²⁷²⁵\0\0\0\0²⁷²\0\0\0\0\0\0\0²¹\0\0\0\0\0⁷\0\0\0\0\0\0\0\0\0²\0\0\0⁴²²²¹\0\0\0゛333゛\0\0\0⁷⁶⁶⁶⁶\0\0\0゜ >¹?\0\0\0゜0、0「⁴\0\000086○0\0\0\0ᶠ¹ᶠ「ᶜ²\0\0ᵉ³゜3゛\0\0\0ᶠ⁸⁴⁶⁶\0\0\0゛3゛3゛\0\0\0゛3>0「⁴\0\0\0⁶⁶\0⁶⁶\0\0\0²\0²¹\0\0\0⁴²¹²⁴\0\0\0\0⁷\0⁷\0\0\0\0¹²⁴²¹\0\0\0⁷⁴⁶\0²\0\0\0²⁵⁵¹⁶\0\0\0\0⁶⁵⁷⁵\0\0\0\0³³⁵⁷\0\0\0\0⁶¹¹⁶\0\0\0\0³⁵⁵³\0\0\0\0⁷³¹⁶\0\0\0\0⁷³¹¹\0\0\0\0⁶¹⁵⁷\0\0\0\0⁵⁵⁷⁵\0\0\0\0⁷²²⁷\0\0\0\0⁷²²³\0\0\0\0⁵³⁵⁵\0\0\0\0¹¹¹⁶\0\0\0\0⁷⁷⁵⁵\0\0\0\0³⁵⁵⁵\0\0\0\0⁶⁵⁵³\0\0\0\0⁶⁵⁷¹\0\0\0\0²⁵³⁶\0\0\0\0³⁵³⁵\0\0\0\0⁶¹⁴³\0\0\0\0⁷²²²\0\0\0\0⁵⁵⁵⁶\0\0\0\0⁵⁵⁷²\0\0\0\0⁵⁵⁷⁷\0\0\0\0⁵²²⁵\0\0\0\0⁵⁷⁴³\0\0\0\0⁷⁴¹⁷\0\0\0³¹¹¹³\0\0\0¹²²²⁴\0\0\0⁶⁴⁴⁴⁶\0\0\0²⁵\0\0\0\0\0\0\0\0\0\0⁷\0\0\0²⁴\0\0\0\0\0\0⁸、◀>31\0\0゜3゜33゜\0\0゛⁙³³⁙゛\0\0゜3333゜\0\0?#ᶠ³#>\0\0>#ᶠ³³³\0\0>#³s36▮\00033?333\0\0⁶⁶⁶⁶⁶⁶\0\0「「「「ᶜ⁶\0\0C3••3#\0\0³³³³#?\0\0cw○omi\0\0CGOYq`\0\0>cccc>\0\0ᶠ•••ᶠ³\0\0\"cCk>⁸⁸\0゜3゜3##\0\0>¹゛01゜\0\0?-ᶜᶜᶜ⁴\0\00033333゛\0\0cw6>、⁸\0\0[[{○6\"\0\0c&ᶜ「6c\0\0001¥ᵉ⁶⁶⁶\0\0゜」ᶜ⁶⁙゜\0\0⁶²³²⁶\0\0\0²²²²²\0\0\0³²⁶²³\0\0\0\0⁴⁷¹\0\0\0\0\0²⁵²\0\0\0\0○○○○○\0\0\0U*U*U\0\0\0A○]]>\0\0\0>ccw>\0\0\0■D■D■\0\0\0⁴<、゛▮\0\0\0、.>>、\0\0\0006>>、⁸\0\0\0、6w6、\0\0\0、、>、⁘\0\0\0、>○*:\0\0\0>gcg>\0\0\0○]○A○\0\0\0008⁸⁸ᵉᵉ\0\0\0>ckc>\0\0\0⁸、>、⁸\0\0\0\0\0U\0\0\0\0\0>scs>\0\0\0⁸、○>\"\0\0\0>、⁸、>\0\0\0>wcc>\0\0\0\0⁵R \0\0\0\0\0■*D\0\0\0\0>kwk>\0\0\0○\0○\0○\0\0\0UUUUU\0\0\0ᵉ⁴゛-&\0\0\0■!!%²\0\0\0ᶜ゛  、\0\0\0⁸゛⁸$¥\0\0\0N⁴>E&\0\0\0\"_□□\n\0\0\0゛⁸<■⁶\0\0\0▮ᶜ²ᶜ▮\0\0\0\"z\"\"□\0\0\0゛ \0²<\0\0\0⁸<▮²ᶜ\0\0\0²²²\"、\0\0\0⁸>⁸ᶜ⁸\0\0\0□?□²、\0\0\0<▮~⁴8\0\0\0²⁷2²2\0\0\0ᶠ²ᵉ▮、\0\0\0>@@ 「\0\0\0>▮⁸⁸▮\0\0\0⁸8⁴²<\0\0\0002⁷□x「\0\0\0zB²\nr\0\0\0\t>Kmf\0\0\0¥'\"s2\0\0\0<JIIF\0\0\0□:□:¥\0\0\0#b\"\"、\0\0\0ᶜ\0⁸*M\0\0\0\0ᶜ□!@\0\0\0}y■=]\0\0\0><⁸゛.\0\0\0⁶$~&▮\0\0\0$N⁴F<\0\0\0\n<ZF0\0\0\0゛⁴゛D8\0\0\0⁘>$⁸⁸\0\0\0:VR0⁸\0\0\0⁴、⁴゛⁶\0\0\0⁸²> 、\0\0\0\"\"& 「\0\0\0>「$r0\0\0\0⁴6,&d\0\0\0>「$B0\0\0\0¥'\"#□\0\0\0ᵉd、(x\0\0\0⁴²⁶+」\0\0\0\0\0ᵉ▮⁸\0\0\0\0\n゜□⁴\0\0\0\0⁴ᶠ‖\r\0\0\0\0⁴ᶜ⁶ᵉ\0\0\0> ⁘⁴²\0\0\0000⁸ᵉ⁸⁸\0\0\0⁸>\" 「\0\0\0>⁸⁸⁸>\0\0\0▮~「⁘□\0\0\0⁴>$\"2\0\0\0⁸>⁸>⁸\0\0\0<$\"▮⁸\0\0\0⁴|□▮⁸\0\0\0>   >\0\0\0$~$ ▮\0\0\0⁶ &▮ᶜ\0\0\0> ▮「&\0\0\0⁴>$⁴8\0\0\0\"$ ▮ᶜ\0\0\0>\"-0ᶜ\0\0\0、⁸>⁸⁴\0\0\0** ▮ᶜ\0\0\0、\0>⁸⁴\0\0\0⁴⁴、$⁴\0\0\0⁸>⁸⁸⁴\0\0\0\0、\0\0>\0\0\0> (▮,\0\0\0⁸>0^⁸\0\0\0   ▮ᵉ\0\0\0▮$$DB\0\0\0²゛²²、\0\0\0>  ▮ᶜ\0\0\0ᶜ□!@\0\0\0\0⁸>⁸**\0\0\0> ⁘⁸▮\0\0\0<\0>\0゛\0\0\0⁸⁴$B~\0\0\0@(▮h⁶\0\0\0゛⁴゛⁴<\0\0\0⁴>$⁴⁴\0\0\0、▮▮▮>\0\0\0゛▮゛▮゛\0\0\0>\0> 「\0\0\0$$$ ▮\0\0\0⁘⁘⁘T2\0\0\0²²\"□ᵉ\0\0\0>\"\"\">\0\0\0>\" ▮ᶜ\0\0\0> < 「\0\0\0⁶  ▮ᵉ\0\0\0\0‖▮⁸⁶\0\0\0\0⁴゛⁘⁴\0\0\0\0\0ᶜ⁸゛\0\0\0\0、「▮、\0\0\0⁸⁴c▮⁸\0\0\0⁸▮c⁴⁸\0\0\0"
   poke(0x5f58,0x81)
@@ -896,7 +899,7 @@ function _init()
   poke(0x5f2d,7)
 
   -- unpack map
-  _bsps,_leaves,_checkpoints,pos,angle=decompress("q8k",0,0,unpack_map)
+  _bsps,_leaves,_checkpoints,_start_pos,_start_angle=decompress("q8k",0,0,unpack_map)
   _model=_bsps[1]
   -- restore spritesheet
   reload()
@@ -908,9 +911,9 @@ function _init()
 
   -- start level or game level?
   if #_checkpoints>0 then
-    next_state(play_state,pos,angle,_checkpoints)
+    next_state(play_state,_start_pos,_start_angle,_checkpoints)
   else
-    next_state(start_state,pos,angle)
+    next_state(start_state,_start_pos,_start_angle)
   end
 end
 
@@ -932,7 +935,7 @@ function _update()
   -- always update
   _plyr:update()
   -- always track
-  _cam:track(v_add(_plyr.pos,{0,24,0}),_plyr.m,_plyr.angle)
+  _cam:track(_plyr.eye_pos,_plyr.m,_plyr.angle)
 end
 
 function padding(n)
