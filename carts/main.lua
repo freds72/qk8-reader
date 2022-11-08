@@ -571,37 +571,39 @@ function make_player(pos,a)
         -- check current to target pos
         for i=1,3 do
           local hits,hitmodel={t=32000}
-          --for k,model in pairs(_bsps) do
-          local model=_model
-          if model.solid then
-            local tmphits={
-              t=1,
-              all_solid=true
-            }                     
-            hitscan(model.clipnodes,v_add(self.pos,model.origin,-1),v_add(next_pos,model.origin,-1),tmphits)            
-            -- convert into model's space (mostly zero except moving brushes)
-            if tmphits.n and tmphits.t<hits.t then
-              hits=tmphits
-            end
-          end
-          if hits.n then
-            local fix=v_dot(hits.n,velocity)
-            -- separating?
-            if fix<0 then
-              velocity=v_add(velocity,hits.n,-fix)
-              -- wall hit
-              if abs(hits.n[2])<0.01 then
-                -- can we clear an edge?
-                if stairs then
-                  stairs=nil
-                  -- move up
-                  velocity=v_add(velocity,{0,8,0})
-                end
+          for k,model in pairs(_bsps) do
+            --local model=_model
+            if model.solid then
+              local tmphits={
+                t=1,
+                all_solid=true
+              }                     
+              -- convert into model's space (mostly zero except moving brushes)
+              hitscan(model.clipnodes,v_add(self.pos,model.origin,-1),v_add(next_pos,model.origin,-1),tmphits)            
+              if tmphits.n and tmphits.t<hits.t then
+                hits=tmphits
               end
             end
-            next_pos=v_add(self.pos,velocity)
-          else
-            goto clear
+            if hits.n then
+              local fix=v_dot(hits.n,velocity)
+              -- separating?
+              if fix<0 then
+                if(model.touch) model:touch()
+                velocity=v_add(velocity,hits.n,-fix)
+                -- wall hit
+                if hits.n[2]==0 then
+                  -- can we clear an edge?
+                  if stairs then
+                    stairs=nil
+                    -- move up
+                    velocity=v_add(velocity,{0,8,0})
+                  end
+                end
+              end
+              next_pos=v_add(self.pos,velocity)
+            else
+              goto clear
+            end
           end
         end
         -- cornered?
@@ -612,7 +614,7 @@ function make_player(pos,a)
       end
 
       self.pos=v_add(self.pos,velocity)
-      self.eye_pos=v_add(_plyr.pos,dead and {0,2,0} or {0,24,0},0.6)      
+      self.eye_pos=v_add(_plyr.pos,dead and {0,2,0} or {0,24,0},0.6)
       self.m=make_m_from_euler(unpack(angle))
       
       -- lava?
@@ -645,9 +647,7 @@ end
 
 -- find if pos is within an empty space
 function is_empty(node,pos)
-  local node=find_sub_sector(node,pos)
-  return node.contents!=-1
-  --return node.contents!=-2 or node.contents!=-1
+  return find_sub_sector(node,pos).contents!=-1
 end
 
 -- https://github.com/id-Software/Quake/blob/bf4ac424ce754894ac8f1dae6a3981954bc9852d/WinQuake/world.c
@@ -682,9 +682,9 @@ function ray_bsp_intersect(node,p0,p1,t0,t1,out)
   -- crossing a node
   local t=dist-node_dist
   if t<0 then
-      t=t-0.03125
+      t-=0.03125
   else
-      t=t+0.03125
+      t+=0.03125
   end  
   -- cliping fraction
   local frac=mid(t/(dist-otherdist),0,1)
@@ -736,24 +736,21 @@ function play_state(pos,angle,checkpoints)
   _cam=make_cam()
   _plyr=make_player(pos,angle)
 
-	-- active index
-	local checkpoint=checkpoints[checkpoints.first].next
-
 	-- previous laps
-	local laps={}
-
+	-- active index
+	local laps,checkpoint={},checkpoints[checkpoints.first].next
 	-- remaining time before game over (+ some buffer time)
 	local lap_t,total_t,remaining_t,best_t,best_i=0,0,30*checkpoints.ttl,32000,1
-	local extend_time_t=0
 
-	-- go display
-	local start_ttl,go_ttl=90,120
+  -- display counters
+  local extend_time_t,start_ttl,go_ttl=0,90,120
 
 	return
 		-- draw
 		function()
 			printb("time",2,2,6,1)
-      poke(0x5f58, 0x1 | 0x4 | 0x8 | 0x80)
+      -- fat font
+      poke(0x5f58, 0x8d)
 			printb(padding(ceil(remaining_t/30)),2,9,11,1)
       poke(0x5f58, 0x81)
 
@@ -903,9 +900,10 @@ function _init()
   _model=_bsps[1]
   -- restore spritesheet
   reload()
-  -- copy map tiles to hi mem
+  -- copy unlit tiles to hi mem
   memcpy(0x8000,0x2000,0x1000)
 
+  -- 
   palt(0,false)
   --pal({129, 133, 5, 134, 143, 15, 130, 132, 4, 137, 9, 136, 8, 13, 12},1,1)
 
