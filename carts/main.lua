@@ -25,6 +25,11 @@ end
 function v_dot(a,b)
 	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
 end
+function v_dot2(a,b)
+  local x0,y0,z0=a[1]>>4,a[2]>>4,a[3]>>4
+  local x1,y1,z1=b[1]>>4,b[2]>>4,b[3]>>4
+	return x0*x1+y0*y1+z0*z1
+end
 
 function v_scale(v,scale)
 	v[1]*=scale
@@ -307,7 +312,7 @@ function make_cam()
                       -- global offset (using 0x8000 zone) + stride
                       local texaddr=_maps[mi+1]
                       poke(0x5f56,_maps[mi],(texaddr<<16)&0xff)
-                      poke4(0x5f38,texaddr)
+                      poke4(0x5f38,texaddr)                
                     else
                       -- lightmap
                       -- reset starting point + stride
@@ -509,8 +514,118 @@ function bsp_clip(node,poly,out,uvs)
   end
 end
 
+function clip_velocity(velocity,normal,overbounce)
+    local out,backoff={},v_dot(velocity, normal) * overbounce
+    for i,v in pairs(velocity) do
+        v-=normal[i]*backoff
+        if v>-0.1 and v<0.1 then
+            v=0
+        end
+        out[i]=v
+    end    
+    return out
+end
+
+function slide(ent,origin,velocity)
+  local original_velocity=v_clone(velocity)
+  local primal_velocity=v_clone(velocity)
+  local time_left,planes,wall,ground=1/30,{}
+
+  -- check current to target pos
+  for i=1,4 do
+    -- try far target
+    local next_pos=v_add(origin,velocity,time_left)
+
+    local hits = hitscan(origin,next_pos,_bsps)
+    if not hits.n then
+      -- all clear
+      origin=next_pos
+      break
+    end
+    if hits.start_solid or hits.all_solid then
+        velocity={0,0,0}
+        break
+    end
+    -- actually covered some distance
+    if hits.t>0 then
+        origin=hits.pos
+        planes={}
+    end
+    if hits.t==1 then
+        break
+    end
+
+    -- ground?
+    if hits.n[2]>0.7 then
+        -- last hit ground entity
+        ground=hits.ent
+    end
+    -- wall?
+    if hits.n[2]==0 then
+        wall=hits.n
+    end
+
+    time_left-=time_left*hits.t
+    if #planes>5 then
+        --printh("too many planes: "..#planes)
+        velocity={0,0,0}
+        break
+    end
+    add(planes,hits.n)
+
+    local i,np=1,#planes
+    while i<=np do
+        -- adjust velocity
+        velocity = clip_velocity(original_velocity,planes[i],1)
+        local clear=true
+        for j=1,np do
+            if i~=j then
+                if v_dot(velocity, planes[j])<0 then
+                    clear = false
+                    break
+                end
+            end
+        end
+        if clear then
+            break
+        end
+        i+=1
+    end
+    if i<=np then
+        -- go along
+    else
+        if np~=2 then
+            velocity={0,0,0}
+            break
+        end
+        -- "crease"
+        local dir=v_cross(planes[1],planes[2])
+        -- project velocity on it
+        v_scale(dir,v_dot(dir,velocity))
+        -- new velocity along crease!
+        velocity=dir
+    end
+
+    -- if original velocity is against the original velocity, stop dead
+    -- to avoid tiny occilations in sloping corners
+    -- !!! can overflow !!!
+    if v_dot2(velocity, primal_velocity) <= 0 then
+        velocity={0,0,0}
+        break
+    end
+  end
+
+  return {
+      pos=origin,
+      velocity=velocity,
+      ground=ground,
+      wall=wall,
+      t=time_left*30,
+      touched=touched}
+end
+
 function make_player(pos,a)
-  local angle,dangle,velocity,dead,deadangle={0,a,0},{0,0,0},{0,0,0,}
+  local angle,dangle,velocity,eye_offset,dead,deadangle={0,a,0},{0,0,0},{0,0,0,},0
 
   -- start above floor
   pos=v_add(pos,{0,1,0})
@@ -539,22 +654,22 @@ function make_player(pos,a)
       if(btn(1,1)) dx=-3
       if(btn(2,1)) dz=3
       if(btn(3,1)) dz=-3
-      if(btnp(4)) jmp=20
+      if(btnp(4)) jmp=6
 
-      dangle=v_add(dangle,{stat(39),stat(38),dx/4})
+      dangle=v_add(dangle,{stat(39),stat(38),dx/40})
 
       local c,s=cos(a),-sin(a)
-      velocity=v_add(velocity,{s*dz-c*dx,jmp,c*dz+s*dx})         
+      velocity=v_add(velocity,{s*dz-c*dx,jmp,c*dz+s*dx},30)         
     end,
     update=function(self)
       -- damping      
       angle[3]*=0.8
       v_scale(dangle,0.6)
-      velocity[1]*=0.7
+      velocity[1]*=0.8
       --velocity[2]*=0.9
-      velocity[3]*=0.7
+      velocity[3]*=0.8
       -- gravity
-      velocity[2]-=2
+      velocity[2]-=18
 
       if dead then
         angle=v_lerp(angle,deadangle,0.6)
@@ -564,57 +679,65 @@ function make_player(pos,a)
 
       -- check next position
       local vn,vl=v_normz(velocity)      
+      local new_pos,new_vel,new_ground=self.pos,velocity,self.ground
       if vl>0.1 then
-        local next_pos=v_add(self.pos,velocity)
-        local vel2d=v_normz({vn[1],0,vn[3]})
-        local stairs=not is_empty(_model.clipnodes,v_add(v_add(self.pos,vel2d,16),{0,16,0}))
-        -- check current to target pos
-        for i=1,3 do
-          local hits,hitmodel={t=32000}
-          for k,model in pairs(_bsps) do
-            --local model=_model
-            if model.solid then
-              local tmphits={
-                t=1,
-                all_solid=true
-              }                     
-              -- convert into model's space (mostly zero except moving brushes)
-              hitscan(model.clipnodes,v_add(self.pos,model.origin,-1),v_add(next_pos,model.origin,-1),tmphits)            
-              if tmphits.n and tmphits.t<hits.t then
-                hits=tmphits
-              end
-            end
-            if hits.n then
-              local fix=v_dot(hits.n,velocity)
-              -- separating?
-              if fix<0 then
-                if(model.touch) model:touch()
-                velocity=v_add(velocity,hits.n,-fix)
-                -- wall hit
-                if hits.n[2]==0 then
-                  -- can we clear an edge?
-                  if stairs then
-                    stairs=nil
-                    -- move up
-                    velocity=v_add(velocity,{0,8,0})
-                  end
-                end
-              end
-              next_pos=v_add(self.pos,velocity)
-            else
-              goto clear
-            end
-          end
-        end
-        -- cornered?
-        velocity={0,0,0}
-::clear::
+				local move=slide(self,self.pos,velocity)   
+				new_ground,new_pos,new_vel=move.ground,move.pos,move.velocity
+				if move.wall then
+					local downmove={0,velocity[2]/30-16,0}
+					
+					-- move up
+					local uptrace = hitscan(self.pos,v_add(self.pos,{0,16,0}),_bsps)
+					new_pos = uptrace.pos
+
+					-- move fwd
+					local upvelocity=v_clone(velocity)
+					upvelocity[2]=0
+					local steptrace = slide(self,new_pos,upvelocity)   
+					
+					if steptrace.wall then
+            -- friction
+            local n=v_clone(steptrace.wall)
+            local d=v_dot(n,m_fwd(self.m))+0.5
+            if d<0 then         
+              -- cut the tangential velocity
+              v_scale(n,v_dot(n,new_vel))
+              local side=v_add(new_vel,n,-1)
+              new_vel[1]=side[1]*(1+d)
+              new_vel[3]=side[3]*(1+d)
+            end          
+					end
+
+					-- find flat ground
+					local downtrace = hitscan(steptrace.pos,v_add(steptrace.pos,downmove),_bsps)
+
+          -- ground?
+					if downtrace.n and downtrace.n[2]>0.7 then
+						new_pos,new_ground=downtrace.pos,downtrace.ent
+						-- record how much the stairs up is changing position
+						eye_offset+=new_pos[2]-move.pos[2]
+					else
+						-- no stairs, fallback to normal slide move
+						new_pos,new_vel=move.pos,move.velocity
+					end
+				end	        
       else
-        velocity={0,0,0}
+        new_vel = {0,0,0}
       end
 
-      self.pos=v_add(self.pos,velocity)
-      self.eye_pos=v_add(_plyr.pos,dead and {0,2,0} or {0,24,0},0.6)
+			-- "debug"
+			self.ground=new_ground                    
+
+			-- use corrected velocity
+			self.pos=new_pos
+			velocity=new_vel
+      
+      if dead then
+        self.eye_pos=v_add(self.pos,{0,2,0})
+      else
+        eye_offset=lerp(eye_offset,0,0.4)
+        self.eye_pos=v_add(self.pos,{0,24-eye_offset,0})
+      end
       self.m=make_m_from_euler(unpack(angle))
       
       -- lava?
@@ -682,9 +805,9 @@ function ray_bsp_intersect(node,p0,p1,t0,t1,out)
   -- crossing a node
   local t=dist-node_dist
   if t<0 then
-      t-=0.03125
+    t=t+0.03125
   else
-      t+=0.03125
+    t=t-0.03125
   end  
   -- cliping fraction
   local frac=mid(t/(dist-otherdist),0,1)
@@ -709,8 +832,39 @@ function ray_bsp_intersect(node,p0,p1,t0,t1,out)
   out.pos = pmid
 end
 
-function hitscan(node,p0,p1,out)
-  return ray_bsp_intersect(node,p0,p1,0,1,out)
+function hitscan(p0,p1,ents)
+  -- default = reaches target position
+  local hits={
+      t=1,
+      pos=p1
+  }
+  for k=1,#ents do
+    local other_ent = ents[k]
+    -- skip "hollow" entities
+    if other_ent.solid then
+      local tmphits={
+          t=1,
+          all_solid=true,
+          ent=other_ent
+      }
+      -- rebase ray in entity origin
+      ray_bsp_intersect(other_ent.clipnodes,make_v(other_ent.origin,p0),make_v(other_ent.origin,p1),0,1,tmphits)
+
+      -- "invalid" location
+      if tmphits.start_solid or tmphits.all_solid then
+        return tmphits
+      end
+
+      -- closest hit?
+      if tmphits.n and tmphits.t<hits.t then                    
+          -- adjust pos                        
+          hits = tmphits
+          -- rebase to world space
+          hits.pos=v_add(hits.pos,other_ent.origin)
+      end
+    end
+  end  
+  return hits
 end
 
 -- game states
@@ -993,6 +1147,7 @@ function _draw()
   draw_state()
 
   if(_msg) printb(_msg,nil,80,6,1)
+
   -- set screen palette (color ramp 8 is neutral)
   memcpy(0x5f10,0x4300+16*8,16)
 end
