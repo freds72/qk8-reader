@@ -25,6 +25,11 @@ end
 function v_dot(a,b)
 	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
 end
+function v_dot2(a,b)
+  local x0,y0,z0=a[1]>>4,a[2]>>4,a[3]>>4
+  local x1,y1,z1=b[1]>>4,b[2]>>4,b[3]>>4
+	return x0*x1+y0*y1+z0*z1
+end
 
 function v_scale(v,scale)
 	v[1]*=scale
@@ -562,7 +567,7 @@ function slide(ent,origin,velocity)
 
     time_left-=time_left*hits.t
     if #planes>5 then
-        -- printh("too many planes: "..#planes)
+        --printh("too many planes: "..#planes)
         velocity={0,0,0}
         break
     end
@@ -603,7 +608,8 @@ function slide(ent,origin,velocity)
 
     -- if original velocity is against the original velocity, stop dead
     -- to avoid tiny occilations in sloping corners
-    if v_dot(velocity, primal_velocity) <= 0 then
+    -- !!! can overflow !!!
+    if v_dot2(velocity, primal_velocity) <= 0 then
         velocity={0,0,0}
         break
     end
@@ -659,9 +665,9 @@ function make_player(pos,a)
       -- damping      
       angle[3]*=0.8
       v_scale(dangle,0.6)
-      velocity[1]*=0.7
+      velocity[1]*=0.8
       --velocity[2]*=0.9
-      velocity[3]*=0.7
+      velocity[3]*=0.8
       -- gravity
       velocity[2]-=18
 
@@ -676,9 +682,7 @@ function make_player(pos,a)
       local new_pos,new_vel,new_ground=self.pos,velocity,self.ground
       if vl>0.1 then
 				local move=slide(self,self.pos,velocity)   
-				new_ground = move.ground 
-				new_pos = move.pos
-				new_vel = move.velocity
+				new_ground,new_pos,new_vel=move.ground,move.pos,move.velocity
 				if move.wall then
 					local downmove={0,velocity[2]/30-16,0}
 					
@@ -700,14 +704,12 @@ function make_player(pos,a)
 
           -- ground?
 					if downtrace.n and downtrace.n[2]>0.7 then
-						new_pos = downtrace.pos
-						new_ground = downtrace.ent
+						new_pos,new_ground=downtrace.pos,downtrace.ent
 						-- record how much the stairs up is changing position
-						eye_offset += new_pos[2] - move.pos[2]
+						eye_offset+=new_pos[2]-move.pos[2]
 					else
 						-- no stairs, fallback to normal slide move
-						new_pos = move.pos
-						new_vel = move.velocity
+						new_pos,new_vel=move.pos,move.velocity
 					end
 				end	        
       else
@@ -720,7 +722,7 @@ function make_player(pos,a)
 			-- use corrected velocity
 			self.pos=new_pos
 			velocity=new_vel
-
+      
       if dead then
         self.eye_pos=v_add(self.pos,{0,2,0})
       else
