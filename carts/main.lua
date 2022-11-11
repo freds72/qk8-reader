@@ -307,7 +307,7 @@ function make_cam()
                       -- global offset (using 0x8000 zone) + stride
                       local texaddr=_maps[mi+1]
                       poke(0x5f56,_maps[mi],(texaddr<<16)&0xff)
-                      poke4(0x5f38,texaddr)
+                      poke4(0x5f38,texaddr)                
                     else
                       -- lightmap
                       -- reset starting point + stride
@@ -509,8 +509,128 @@ function bsp_clip(node,poly,out,uvs)
   end
 end
 
+local STOP_EPSILON = 0.1
+function clip_velocity(velocity,normal,out,overbounce)
+    local backoff = v_dot(velocity, normal) * overbounce
+    local out={}
+    for i=1,3 do
+        local v = velocity[i] - normal[i]*backoff
+        if v > -STOP_EPSILON and v < STOP_EPSILON then
+            v = 0
+        end
+        out[i]=v
+    end    
+    return out
+end
+
+function slide(ent,origin,velocity)
+  local original_velocity=v_clone(velocity)
+  local primal_velocity=v_clone(velocity)
+  local blocked = 0
+  local time_left = 1/30
+  local planes={}
+  local wall_n
+  local ground_ent
+
+  -- avoid touching the same non-solid multiple times (ex: triggers)
+  local touched = {}
+
+  -- check current to target pos
+  for i=1,4 do
+      -- try far target
+      local next_pos=v_add(origin,velocity,time_left)
+
+      local hits = hitscan(origin,next_pos,_bsps)
+      if not hits.n then
+        -- all clear
+        origin=next_pos
+        break
+      end
+      if hits.start_solid or hits.all_solid then
+          velocity={0,0,0}
+          break
+      end
+      -- actually covered some distance
+      if hits.t>0 then
+          origin=hits.pos
+          planes={}
+      end
+      if hits.t==1 then
+          break
+      end
+
+      -- ground?
+      if hits.n[2]>0.7 then
+          blocked = bor(blocked,1)
+          -- last hit ground entity
+          ground_ent = hits.ent
+      end
+      -- wall?
+      if hits.n[2]==0 then
+          blocked = bor(blocked,2)
+          wall_n = hits.n
+      end
+
+      time_left-=time_left*hits.t
+      if #planes>5 then
+          -- printh("too many planes: "..#planes)
+          velocity={0,0,0}
+          break
+      end
+      add(planes,hits.n)
+
+      local i,np=1,#planes
+      while i<=np do
+          -- adjust velocity
+          velocity = clip_velocity(original_velocity,planes[i],velocity,1)
+          local clear=true
+          for j=1,np do
+              if i~=j then
+                  if v_dot(velocity, planes[j])<0 then
+                      clear = false
+                      break
+                  end
+              end
+          end
+          if clear then
+              break
+          end
+          i+=1
+      end
+      if i<=np then
+          -- go along
+      else
+          if np~=2 then
+              velocity={0,0,0}
+              break
+          end
+          local dir=v_cross(planes[1],planes[2])
+          local d=v_dot(dir,velocity)
+          v_scale(dir,d)
+          velocity=dir
+      end
+
+      -- if original velocity is against the original velocity, stop dead
+      -- to avoid tiny occilations in sloping corners
+      if v_dot(velocity, primal_velocity) <= 0 then
+          velocity={0,0,0}
+          break
+      end
+  end
+
+  return {
+      pos=origin,
+      velocity=velocity,
+      ground=ground_ent,
+      on_ground=band(blocked,1)>0,
+      on_wall=band(blocked,2)>0,
+      t=time_left*30,
+      n=wall_n,
+      touched=touched}
+end
+
 function make_player(pos,a)
-  local angle,dangle,velocity,dead,deadangle={0,a,0},{0,0,0},{0,0,0,}
+  local angle,dangle,velocity,dead,deadangle,on_ground={0,a,0},{0,0,0},{0,0,0,}
 
   -- start above floor
   pos=v_add(pos,{0,1,0})
@@ -535,13 +655,13 @@ function make_player(pos,a)
     control=function(self)
       -- move
       local dx,dz,a,jmp=0,0,angle[2],0
-      if(btn(0,1)) dx=3
-      if(btn(1,1)) dx=-3
-      if(btn(2,1)) dz=3
-      if(btn(3,1)) dz=-3
+      if(btn(0,1)) dx=30
+      if(btn(1,1)) dx=-30
+      if(btn(2,1)) dz=30
+      if(btn(3,1)) dz=-30
       if(btnp(4)) jmp=20
 
-      dangle=v_add(dangle,{stat(39),stat(38),dx/4})
+      dangle=v_add(dangle,{stat(39),stat(38),dx/40})
 
       local c,s=cos(a),-sin(a)
       velocity=v_add(velocity,{s*dz-c*dx,jmp,c*dz+s*dx})         
@@ -554,7 +674,7 @@ function make_player(pos,a)
       --velocity[2]*=0.9
       velocity[3]*=0.7
       -- gravity
-      velocity[2]-=2
+      velocity[2]-=18
 
       if dead then
         angle=v_lerp(angle,deadangle,0.6)
@@ -564,57 +684,24 @@ function make_player(pos,a)
 
       -- check next position
       local vn,vl=v_normz(velocity)      
+      local new_pos,new_vel,ground=self.pos,velocity,on_ground
       if vl>0.1 then
-        local next_pos=v_add(self.pos,velocity)
-        local vel2d=v_normz({vn[1],0,vn[3]})
-        local stairs=not is_empty(_model.clipnodes,v_add(v_add(self.pos,vel2d,16),{0,16,0}))
-        -- check current to target pos
-        for i=1,3 do
-          local hits,hitmodel={t=32000}
-          for k,model in pairs(_bsps) do
-            --local model=_model
-            if model.solid then
-              local tmphits={
-                t=1,
-                all_solid=true
-              }                     
-              -- convert into model's space (mostly zero except moving brushes)
-              hitscan(model.clipnodes,v_add(self.pos,model.origin,-1),v_add(next_pos,model.origin,-1),tmphits)            
-              if tmphits.n and tmphits.t<hits.t then
-                hits=tmphits
-              end
-            end
-            if hits.n then
-              local fix=v_dot(hits.n,velocity)
-              -- separating?
-              if fix<0 then
-                if(model.touch) model:touch()
-                velocity=v_add(velocity,hits.n,-fix)
-                -- wall hit
-                if hits.n[2]==0 then
-                  -- can we clear an edge?
-                  if stairs then
-                    stairs=nil
-                    -- move up
-                    velocity=v_add(velocity,{0,8,0})
-                  end
-                end
-              end
-              next_pos=v_add(self.pos,velocity)
-            else
-              goto clear
-            end
-          end
-        end
-        -- cornered?
-        velocity={0,0,0}
-::clear::
-      else
-        velocity={0,0,0}
+				local oldvel=v_clone(velocity)
+				local oldorg=v_clone(self.pos)
+				local move = slide(self,self.pos,velocity)   
+				ground = move.ground 
+				new_pos = move.pos
+				new_vel = move.velocity
       end
 
-      self.pos=v_add(self.pos,velocity)
-      self.eye_pos=v_add(_plyr.pos,dead and {0,2,0} or {0,24,0},0.6)
+			-- "debug"
+			on_ground=ground                    
+
+			-- use corrected velocity
+			self.pos=new_pos
+			velocity=new_vel
+
+      self.eye_pos=v_add(self.pos,dead and {0,2,0} or {0,24,0},0.6)
       self.m=make_m_from_euler(unpack(angle))
       
       -- lava?
@@ -682,9 +769,9 @@ function ray_bsp_intersect(node,p0,p1,t0,t1,out)
   -- crossing a node
   local t=dist-node_dist
   if t<0 then
-      t-=0.03125
+    t=t+0.03125
   else
-      t+=0.03125
+    t=t-0.03125
   end  
   -- cliping fraction
   local frac=mid(t/(dist-otherdist),0,1)
@@ -709,8 +796,39 @@ function ray_bsp_intersect(node,p0,p1,t0,t1,out)
   out.pos = pmid
 end
 
-function hitscan(node,p0,p1,out)
-  return ray_bsp_intersect(node,p0,p1,0,1,out)
+function hitscan(p0,p1,ents)
+  -- default = reaches target position
+  local hits={
+      t=1,
+      pos=p1
+  }
+  for k=1,#ents do
+    local other_ent = ents[k]
+    -- skip "hollow" entities
+    if other_ent.solid then
+      local tmphits={
+          t=1,
+          all_solid=true,
+          ent=other_ent
+      }
+      -- rebase ray in entity origin
+      ray_bsp_intersect(other_ent.clipnodes,make_v(other_ent.origin,p0),make_v(other_ent.origin,p1),0,1,tmphits)
+
+      -- "invalid" location
+      if tmphits.start_solid or tmphits.all_solid then
+        return tmphits
+      end
+
+      -- closest hit?
+      if tmphits.n and tmphits.t<hits.t then                    
+          -- adjust pos                        
+          hits = tmphits
+          -- rebase to world space
+          hits.pos=v_add(hits.pos,other_ent.origin)
+      end
+    end
+  end  
+  return hits
 end
 
 -- game states
