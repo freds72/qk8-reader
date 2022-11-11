@@ -696,7 +696,16 @@ function make_player(pos,a)
 					local steptrace = slide(self,new_pos,upvelocity)   
 					
 					if steptrace.wall then
-						-- velocity = applyFriction(ent, velocity, steptrace.n)
+            -- friction
+            local n=v_clone(steptrace.wall)
+            local d=v_dot(n,m_fwd(self.m))+0.5
+            if d<0 then         
+              -- cut the tangential velocity
+              v_scale(n,v_dot(n,new_vel))
+              local side=v_add(new_vel,n,-1)
+              new_vel[1]=side[1]*(1+d)
+              new_vel[3]=side[3]*(1+d)
+            end          
 					end
 
 					-- find flat ground
@@ -1138,7 +1147,7 @@ function _draw()
   draw_state()
 
   if(_msg) printb(_msg,nil,80,6,1)
-  print("ground: "..tostr(_plyr.ground),2,2,12)
+
   -- set screen palette (color ramp 8 is neutral)
   memcpy(0x5f10,0x4300+16*8,16)
 end
