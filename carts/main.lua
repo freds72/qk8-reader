@@ -686,13 +686,10 @@ function make_player(pos,a)
 					
 					-- move up
 					local uptrace = hitscan(self.pos,v_add(self.pos,{0,16,0}),_bsps)
-					new_pos = uptrace.pos
+					new_pos=uptrace.pos
 
 					-- move fwd
-					local upvelocity=v_clone(velocity)
-					upvelocity[2]=0
-					local steptrace = slide(self,new_pos,upvelocity)   
-					
+					local steptrace = slide(self,new_pos,{velocity[1],0,velocity[3]})   
 					if steptrace.wall then
             -- friction
             local n=v_clone(steptrace.wall)
