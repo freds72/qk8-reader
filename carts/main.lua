@@ -168,26 +168,26 @@ function make_cam()
   local visleaves,visframe,prev_leaf={},0
 
   -- collect bps leaves in order
-  local function collect_bsp(node,pos)
+  local function collect_bsp(node,origin)
     local function collect_leaf(side)
       local child=node[side]
       if child and child.visframe==visframe then
         if child.contents then          
           visleaves[#visleaves+1]=child
         else
-          collect_bsp(child,pos)
+          collect_bsp(child,origin)
         end
       end
     end  
-    local side=plane_isfront(node.plane,pos)
+    local side=plane_isfront(node.plane,origin)
     collect_leaf(not side)
     collect_leaf(side)
   end  
 
 	return {
-		pos={0,0,0},    
-		track=function(self,pos,m)
-      --pos=v_add(v_add(pos,m_fwd(m),-24),m_up(m),24)	      
+		origin={0,0,0},    
+		track=function(self,origin,m)
+      --origin=v_add(v_add(origin,m_fwd(m),-24),m_up(m),24)	      
       local m={unpack(m)}		
       -- inverse view matrix
       m[2],m[5]=m[5],m[2]
@@ -198,12 +198,12 @@ function make_cam()
         1,0,0,0,
         0,1,0,0,
         0,0,1,0,
-        -pos[1],-pos[2],-pos[3],1
+        -origin[1],-origin[2],-origin[3],1
       })
-      self.pos=pos
+      self.origin=origin
     end,
     collect_leaves=function(self,bsp,all_leaves)
-      local current_leaf=find_sub_sector(bsp,self.pos)
+      local current_leaf=find_sub_sector(bsp,self.origin)
       -- changed sector?
       if current_leaf and current_leaf!=prev_leaf then
         prev_leaf=current_leaf
@@ -226,7 +226,7 @@ function make_cam()
       end
       -- collect convex spaces back to front
       visleaves={}
-      collect_bsp(bsp,self.pos)
+      collect_bsp(bsp,self.origin)
       -- for all things on each leaves, pick closest leaf
       for leaf in all(visleaves) do
         for thing in pairs(leaf.things) do
@@ -258,7 +258,7 @@ function make_cam()
       }
 
       local m=self.m
-      local pts,cam_u,cam_v,v_cache,f_cache,fu_cache,fv_cache,cam_pos={},{m[1],m[5],m[9]},{m[2],m[6],m[10]},setmetatable({m=m},v_cache_class),{},{},{},self.pos
+      local pts,cam_u,cam_v,v_cache,f_cache,fu_cache,fv_cache,cam_pos={},{m[1],m[5],m[9]},{m[2],m[6],m[10]},setmetatable({m=m},v_cache_class),{},{},{},self.origin
       
       -- printh(cam_u[1]..","..cam_u[2]..","..cam_u[3].." | "..cam_v[1]..","..cam_v[2]..","..cam_v[3])
       
@@ -352,8 +352,8 @@ function make_cam()
         if brushes then
           local polys=brushes[leaf]
           if polys then
-            -- cam pos in model space (eg. shifted)
-            local m,cam_pos=self.m,v_add(self.pos,brushes.model.origin,-1)
+            -- cam origin in model space (eg. shifted)
+            local m,cam_pos=self.m,v_add(self.origin,brushes.model.origin,-1)
             -- all "faces"
             for i,poly in pairs(polys) do                          
               -- dual sided or visible?
@@ -519,7 +519,7 @@ function slide(ent,origin,velocity)
   local original_velocity,primal_velocity=v_clone(velocity),v_clone(velocity)
   local time_left,planes,wall,ground=1/30,{}
 
-  -- check current to target pos
+  -- check current to target origin
   for i=1,4 do
     -- try far target
     local next_pos=v_add(origin,velocity,time_left)
@@ -536,7 +536,7 @@ function slide(ent,origin,velocity)
     end
     -- actually covered some distance
     if hits.t>0 then
-        origin=hits.pos
+        origin=hits.origin
         planes={}
     end
     if hits.t==1 then
@@ -551,6 +551,9 @@ function slide(ent,origin,velocity)
     elseif n_up==0 then
       -- wall?
       wall=hits.n
+    end
+    if hits.ent.touch then
+      hits.ent:touch()
     end
 
     time_left-=time_left*hits.t
@@ -614,7 +617,7 @@ function slide(ent,origin,velocity)
   end
 
   return {
-      pos=origin,
+      origin=origin,
       velocity=velocity,
       ground=ground,
       wall=wall,
@@ -622,17 +625,16 @@ function slide(ent,origin,velocity)
       touched=touched}
 end
 
-function make_player(pos,a)
+function make_player(origin,a)
   local angle,dangle,velocity,eye_offset,dead,deadangle={0,a,0},{0,0,0},{0,0,0,},0
 
-  -- start above floor
-  pos=v_add(pos,{0,1,0})
   return {
-    pos=pos,    
+    -- start above floor
+    origin=v_add(origin,{0,1,0}),    
     m=make_m_from_euler(unpack(angle)),
     -- change orientation
-    orient=function(self,pos,dir,a)
-      self.pos=v_clone(pos)
+    orient=function(self,origin,dir,a)
+      self.origin=v_clone(origin)
       -- adjust velocity direction (keep speed)
       local vn,vl=v_normz(velocity)
       velocity=v_clone(dir)
@@ -677,16 +679,16 @@ function make_player(pos,a)
 
       -- check next position
       local vn,vl=v_normz(velocity)      
-      local new_pos,new_vel,new_ground=self.pos,velocity,self.ground
+      local new_pos,new_vel,new_ground=self.origin,velocity,self.ground
       if vl>0.1 then
-				local move=slide(self,self.pos,velocity)   
-				new_ground,new_pos,new_vel=move.ground,move.pos,move.velocity
+				local move=slide(self,self.origin,velocity)   
+				new_ground,new_pos,new_vel=move.ground,move.origin,move.velocity
 				if move.wall then
 					local downmove={0,velocity[2]/30-16,0}
 					
 					-- move up
-					local uptrace = hitscan(self.pos,v_add(self.pos,{0,16,0}),_bsps)
-					new_pos=uptrace.pos
+					local uptrace = hitscan(self.origin,v_add(self.origin,{0,16,0}),_bsps)
+					new_pos=uptrace.origin
 
 					-- move fwd
 					local steptrace = slide(self,new_pos,{velocity[1],0,velocity[3]})   
@@ -704,16 +706,16 @@ function make_player(pos,a)
 					end
 
 					-- find flat ground
-					local downtrace = hitscan(steptrace.pos,v_add(steptrace.pos,downmove),_bsps)
+					local downtrace = hitscan(steptrace.origin,v_add(steptrace.origin,downmove),_bsps)
 
           -- ground?
 					if downtrace.n and downtrace.n[2]>0.7 then
-						new_pos,new_ground=downtrace.pos,downtrace.ent
+						new_pos,new_ground=downtrace.origin,downtrace.ent
 						-- record how much the stairs up is changing position
-						eye_offset+=new_pos[2]-move.pos[2]
+						eye_offset+=new_pos[2]-move.origin[2]
 					else
 						-- no stairs, fallback to normal slide move
-						new_pos,new_vel=move.pos,move.velocity
+						new_pos,new_vel=move.origin,move.velocity
 					end
 				end	        
       else
@@ -724,21 +726,22 @@ function make_player(pos,a)
 			self.ground=new_ground                    
 
 			-- use corrected velocity
-			self.pos=new_pos
+			self.origin=new_pos
 			velocity=new_vel
       
       if dead then
-        self.eye_pos=v_add(self.pos,{0,2,0})
+        self.eye_pos=v_add(self.origin,{0,2,0})
       else
         eye_offset=lerp(eye_offset,0,0.4)
-        self.eye_pos=v_add(self.pos,{0,24-eye_offset,0})
+        self.eye_pos=v_add(self.origin,{0,24-eye_offset,0})
       end
       self.m=make_m_from_euler(unpack(angle))
       
       -- lava?
       if not dead then
-        local node=find_sub_sector(_model.bsp,self.pos)
-        if node.contents==-5 then
+        local node=find_sub_sector(_model.bsp,self.origin)
+        -- in lava or invalid position -> kill
+        if node.contents==-5 or node.contents==-2 then
           -- avoid reentrancy
           dead=true
           deadangle=v_clone(angle)
@@ -755,17 +758,12 @@ end
 -->8
 -- bsp functions
 
--- find in what convex leaf pos is
-function find_sub_sector(node,pos)
+-- find in what convex leaf origin is
+function find_sub_sector(node,origin)
   while not node.contents do
-    node=node[plane_isfront(node.plane,pos)]
+    node=node[plane_isfront(node.plane,origin)]
   end
   return node
-end
-
--- find if pos is within an empty space
-function is_empty(node,pos)
-  return find_sub_sector(node,pos).contents!=-1
 end
 
 -- https://github.com/id-Software/Quake/blob/bf4ac424ce754894ac8f1dae6a3981954bc9852d/WinQuake/world.c
@@ -824,14 +822,14 @@ function ray_bsp_intersect(node,p0,p1,t0,t1,out)
   local nx,ny,nz=plane_get(node.plane)
   out.n = {scale*nx,scale*ny,scale*nz,node_dist}
   out.t = tmid
-  out.pos = pmid
+  out.origin = pmid
 end
 
 function hitscan(p0,p1,ents)
   -- default = reaches target position
   local hits={
       t=1,
-      pos=p1
+      origin=p1
   }
   for k=1,#ents do
     local other_ent = ents[k]
@@ -852,10 +850,10 @@ function hitscan(p0,p1,ents)
 
       -- closest hit?
       if tmphits.n and tmphits.t<hits.t then                    
-          -- adjust pos                        
+          -- adjust origin                        
           hits = tmphits
           -- rebase to world space
-          hits.pos=v_add(hits.pos,other_ent.origin)
+          hits.origin=v_add(hits.origin,other_ent.origin)
       end
     end
   end  
@@ -868,9 +866,9 @@ function next_state(state,...)
 	draw_state,update_state=state(...)
 end
 
-function start_state(pos,angle)
+function start_state(origin,angle)
   _cam=make_cam()
-  _plyr=make_player(pos,angle)
+  _plyr=make_player(origin,angle)
   return
     -- draw
     function()
@@ -881,9 +879,9 @@ function start_state(pos,angle)
     end
 end
 
-function play_state(pos,angle,checkpoints)
+function play_state(origin,angle,checkpoints)
   _cam=make_cam()
-  _plyr=make_player(pos,angle)
+  _plyr=make_player(origin,angle)
 
 	-- previous laps
 	-- active index
@@ -947,7 +945,7 @@ function play_state(pos,angle,checkpoints)
 			end
 
       -- active track?
-      local hit = find_sub_sector(checkpoints[checkpoint].model.clipnodes,_plyr.pos)
+      local hit = find_sub_sector(checkpoints[checkpoint].model.clipnodes,_plyr.origin)
       -- inside volume?        
       if hit and hit.contents==-2 then
         checkpoint=checkpoints[checkpoint].next
@@ -1071,7 +1069,7 @@ function _update()
     local f=_futures[i].co
     -- still active?
     if f and costatus(f)=="suspended" then
-      coresume(f)
+      assert(coresume(f))
     else
       deli(_futures,i)
     end
@@ -1098,7 +1096,6 @@ end
 function _draw()
   cls(15)
   
-  --[[
   local door=_bsps[2]
   -- _cam:draw_faces(door.verts,door.faces,_leaves,door.leaf_start,door.leaf_end)
 
@@ -1122,11 +1119,9 @@ function _draw()
         -- copy v
         v={unpack(v)}
         if uvi!=-1 then
-          if uvi!=-1 then
-            local kuv=uvi+(k<<1)
-            v.u=_texcoords[kuv-1]
-            v.v=_texcoords[kuv]
-          end
+          local kuv=uvi+(k<<1)
+          v.u=_texcoords[kuv-1]
+          v.v=_texcoords[kuv]
         end
         poly[k]=v
       end
@@ -1134,7 +1129,6 @@ function _draw()
       bsp_clip(_model.bsp,poly,out,uvi!=-1)
     end
   end
-  ]]
 
   local visleaves=_cam:collect_leaves(_model.bsp,_leaves)
   _cam:draw_faces(_model.verts,_model.faces,visleaves,1,#visleaves,out)
@@ -1436,12 +1430,12 @@ function unpack_map()
       targets={}
       wait=5
       unpack_array(function()
-        add(targets,{pos=unpack_vert(),dir=unpack_vert(),angle=unpack_fixed()})
+        add(targets,{origin=unpack_vert(),dir=unpack_vert(),angle=unpack_fixed()})
       end)
     end
     do_async(function()
       while true do
-        local hit=find_sub_sector(model.clipnodes,_plyr.pos)
+        local hit=find_sub_sector(model.clipnodes,_plyr.origin)
         -- inside volume?
         if hit and hit.contents==-2 then
           wait_async(delay)
@@ -1450,7 +1444,7 @@ function unpack_map()
           if targets then
             -- todo: sfx
             local target=rnd(targets)
-            _plyr:orient(target.pos,target.dir,flags&8!=0 and target.angle)
+            _plyr:orient(target.origin,target.dir,flags&8!=0 and target.angle)
           end
           -- trigger once?
           wait_async(wait>0 and wait or 60)
@@ -1491,24 +1485,103 @@ function unpack_map()
   -- doors
   unpack_array(function()
     -- standard triggers parameters
-    local flags,model,wait,speed,pos1,pos2=mpeek(),unpack_ref(models),unpack_variant(),unpack_variant(),unpack_vert(),unpack_vert()
-    local triggered
-    model.touch=function()    
+    local flags,pusher,wait,speed,pos1,pos2,triggered=mpeek(),unpack_ref(models),unpack_variant(),unpack_variant(),unpack_vert(),unpack_vert()
+    local move=make_v(pos1,pos2)
+    v_scale(move,1/30)
+    local function testEntityPosition(ent)
+      printh("-------------------")
+      local valid=true
+      for i,model in pairs(models) do
+        if model.solid then
+          -- find if origin is not in solid space
+          local is_valid=find_sub_sector(model.clipnodes,make_v(model.origin,ent.origin)).contents!=-2
+          printh("bsp: "..i..": "..tostr(is_valid))
+          valid=valid and is_valid
+        end
+      end
+      return valid
+    end
+
+    pusher.touch=function()    
       -- avoid reentrancy
       if(triggered) return
       triggered=true
+      printh("touched door")
       do_async(function()
         while true do
           -- todo: include speed
-          for i=0,30 do 
-            model.origin=v_lerp(pos1,pos2,i/30)
+          local i=0
+          while i<30 do 
+            local pushorig = v_clone(pusher.origin)
+            -- move the pusher to it's final position
+            pusher.origin = v_add(pusher.origin,move)
+      
+            -- only conflicting entity: player!!
+            local check,old_orig=_plyr
+         
+            -- if the entity is standing on the pusher, it will definitely be moved
+            if check.ground ~= pusher then
+              --[[
+              -- outside of move box?
+              if check.absmins[1] >= maxs[1]
+              or check.absmins[2] >= maxs[2]
+              or check.absmins[3] >= maxs[3]
+              or check.absmaxs[1] <= mins[1]
+              or check.absmaxs[2] <= mins[2]
+              or check.absmaxs[3] <= mins[3] then
+                printh("player off path")
+                goto continue
+              end
+              ]]
+              -- see if the ent's bbox is inside the pusher's final position
+              if testEntityPosition(check) then
+                printh("Player in path but clear")
+                goto continue
+              end
+            end
+
+            -- try moving the contacted entity 
+            old_orig=v_clone(check.origin)
+            check.origin = v_add(check.origin, move)
+            -- printh("moving "..check.classname.." from: "..v_tostring(moved[check]).." to: "..v_tostring(check.origin))
+            
+            if testEntityPosition(check) then
+              printh(">>pushed")
+              goto continue
+            end
+
+            -- if it is ok to leave in the old position, do it
+            -- occurs when entity blocked by something else
+            check.origin = old_orig
+            if testEntityPosition(check) then
+              printh("**blocked")
+              goto continue
+            end
+
+            -- failed move
+            printh("!!!! rollback move !!!")
+            pusher.origin = pushorig
+
+            -- if the pusher has a "blocked" function, call it
+            --  otherwise, just stay in place until the obstacle is gone
+            -- vm:call(pusher,"blocked", check)
+            
+            -- move back any entities we already moved
+            check.origin = old_orig
+            goto blocked
+::continue::
+            -- pusher can move
+            i+=1
+::blocked::
             yield()
           end
+
           -- trigger once?
           if wait>0 then
             wait_async(wait)
             -- flip target/end
-            pos1,pos2=pos2,pos1
+            v_scale(move,-1)
+            -- todo: snap to origin            
           else
             return
           end
