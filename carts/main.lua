@@ -25,7 +25,8 @@ end
 function v_dot(a,b)
 	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
 end
-function v_dot2(a,b)
+-- returns scaled down dot, safe for overflow
+function v_dotsign(a,b)
   local x0,y0,z0=a[1]>>4,a[2]>>4,a[3]>>4
   local x1,y1,z1=b[1]>>4,b[2]>>4,b[3]>>4
 	return x0*x1+y0*y1+z0*z1
@@ -514,21 +515,8 @@ function bsp_clip(node,poly,out,uvs)
   end
 end
 
-function clip_velocity(velocity,normal,overbounce)
-    local out,backoff={},v_dot(velocity, normal) * overbounce
-    for i,v in pairs(velocity) do
-        v-=normal[i]*backoff
-        if v>-0.1 and v<0.1 then
-            v=0
-        end
-        out[i]=v
-    end    
-    return out
-end
-
 function slide(ent,origin,velocity)
-  local original_velocity=v_clone(velocity)
-  local primal_velocity=v_clone(velocity)
+  local original_velocity,primal_velocity=v_clone(velocity),v_clone(velocity)
   local time_left,planes,wall,ground=1/30,{}
 
   -- check current to target pos
@@ -555,14 +543,14 @@ function slide(ent,origin,velocity)
         break
     end
 
-    -- ground?
-    if hits.n[2]>0.7 then
+    local n_up=hits.n[2]
+    if n_up>0.7 then
+        -- ground?
         -- last hit ground entity
         ground=hits.ent
-    end
-    -- wall?
-    if hits.n[2]==0 then
-        wall=hits.n
+    elseif n_up==0 then
+      -- wall?
+      wall=hits.n
     end
 
     time_left-=time_left*hits.t
@@ -573,26 +561,36 @@ function slide(ent,origin,velocity)
     end
     add(planes,hits.n)
 
-    local i,np=1,#planes
+    local i,np,new_vel=1,#planes,{}
     while i<=np do
         -- adjust velocity
-        velocity = clip_velocity(original_velocity,planes[i],1)
-        local clear=true
-        for j=1,np do
+        local n=planes[i]
+        local backoff=v_dot(original_velocity,n)        
+        for k,v in pairs(original_velocity) do
+            v-=n[k]*backoff
+            if v>-0.1 and v<0.1 then
+                v=0
+            end
+            new_vel[k]=v
+        end
+
+        local j=1
+        while j<=np do
             if i~=j then
-                if v_dot(velocity, planes[j])<0 then
-                    clear = false
-                    break
+                if v_dot(new_vel, planes[j])<0 then
+                  break
                 end
             end
+            j+=1
         end
-        if clear then
+        if j>np then
             break
         end
         i+=1
     end
     if i<=np then
         -- go along
+        velocity=new_vel
     else
         if np~=2 then
             velocity={0,0,0}
@@ -609,7 +607,7 @@ function slide(ent,origin,velocity)
     -- if original velocity is against the original velocity, stop dead
     -- to avoid tiny occilations in sloping corners
     -- !!! can overflow !!!
-    if v_dot2(velocity, primal_velocity) <= 0 then
+    if v_dotsign(velocity, primal_velocity) <= 0 then
         velocity={0,0,0}
         break
     end
@@ -701,7 +699,7 @@ function make_player(pos,a)
             local d=v_dot(n,m_fwd(self.m))+0.5
             if d<0 then         
               -- cut the tangential velocity
-              v_scale(n,v_dot(n,new_vel))
+              v_scale(n,v_dot(n,new_vel))       
               local side=v_add(new_vel,n,-1)
               new_vel[1]=side[1]*(1+d)
               new_vel[3]=side[3]*(1+d)
@@ -805,9 +803,9 @@ function ray_bsp_intersect(node,p0,p1,t0,t1,out)
   -- crossing a node
   local t=dist-node_dist
   if t<0 then
-    t=t+0.03125
+    t+=0.03125
   else
-    t=t-0.03125
+    t-=0.03125
   end  
   -- cliping fraction
   local frac=mid(t/(dist-otherdist),0,1)
@@ -816,7 +814,7 @@ function ray_bsp_intersect(node,p0,p1,t0,t1,out)
     return
   end
 
-  if find_sub_sector(node[not side],pmid).contents != -2 then
+  if find_sub_sector(node[not side],pmid).contents!=-2 then
     return ray_bsp_intersect(node[not side],pmid,p1,tmid,t1,out)
   end
 
