@@ -3,7 +3,7 @@
 
 -- game globals
 local _particles,_futures,_cam,_plyr,_model,_leaves,_bsps,_models,_start_pos,_start_angle={},{}
-local plane_dot,plane_isfront,plane_get
+local plane_dot,plane_isfront,plane_get,plane_bbox
 
 -- lightmap memory address + flat u/v array + bsp content types
 local _maps,_texcoords={},{}
@@ -60,21 +60,17 @@ function v_cross(a,b)
 	local bx,by,bz=b[1],b[2],b[3]
 	return {ay*bz-az*by,az*bx-ax*bz,ax*by-ay*bx}
 end
--- safe for overflow (to some extent)
+
+-- safe for overflow len
+-- faster than sqrt variant (23.5+14 vs. 27.5)
+-- credits: https://www.lexaloffle.com/bbs/?tid=49827
 function v_len(v)
-	local x,y,z=v[1],v[2],v[3]
-  -- pick major
-  -- abs: 2.5 cycles
-  -- masking: 1 cycle
-  -- credits: https://twitter.com/pxlshk
-  local d=max(max(x^^(x>>31),y^^(y>>31)),z^^(z>>31))
-  -- adjust
-  x/=d
-  y/=d
-  z/=d
-  -- actuel len
-  return sqrt(x*x+y*y+z*z)*d
-end
+  local x,y,z=v[1],v[2],v[3]
+  local ax=atan2(x,y)
+  local d2=x*cos(ax)+y*sin(ax)
+  local az=atan2(d2,z)
+  return d2*cos(az)+z*sin(az)
+end 
 
 function v_normz(v)
   local d=v_len(v)
@@ -280,7 +276,7 @@ function make_cam()
 
               local face_verts,outcode,clipcode,uvi=faces[fi+3],0xffff,0,faces[fi+5]
               local np=#face_verts
-              for k,vi in pairs(face_verts) do                
+              for k,vi in inext,face_verts do                
                 local a=v_cache[vi]
                 local code=a.outcode
                 outcode&=code
@@ -355,7 +351,7 @@ function make_cam()
             -- cam origin in model space (eg. shifted)
             local m,cam_pos=self.m,v_add(self.origin,brushes.model.origin,-1)
             -- all "faces"
-            for i,poly in pairs(polys) do                          
+            for i,poly in inext,polys do                          
               -- dual sided or visible?
               local fi=poly.fi
               local fn,flags=faces[fi],faces[fi+2]
@@ -569,7 +565,7 @@ function slide(ent,origin,velocity)
         -- adjust velocity
         local n=planes[i]
         local backoff=v_dot(original_velocity,n)        
-        for k,v in pairs(original_velocity) do
+        for k,v in inext,original_velocity do
             v-=n[k]*backoff
             if v>-0.1 and v<0.1 then
                 v=0
@@ -757,6 +753,59 @@ end
 
 -->8
 -- bsp functions
+
+function pvs_register(ent)
+  -- refresh attributes linked to origin
+  ent.absmins=v_add(ent.origin,ent.mins)
+  ent.absmaxs=v_add(ent.origin,ent.maxs)
+
+  -- unregister from visible world
+  if ent.nodes then
+    for node in pairs(ent.nodes) do
+        if(node.ents) node.ents[ent]=nil
+        ent.nodes[node] = nil
+    end    
+  end
+
+  -- register new location
+  local mins,maxs=ent.absmins,ent.absmaxs
+  local c={
+      0.5*(mins[1]+maxs[1]),
+      0.5*(mins[2]+maxs[2]),
+      0.5*(mins[3]+maxs[3])
+  }
+
+  -- register in visible world (e.g. PVS)
+  register_bbox(_model.bsp, ent, c, make_v(c, maxs))
+end
+
+function register_bbox(node, ent, pos, size)    
+  if node.contents==-2 then
+      return
+  end
+
+  -- any non solid content
+  if node.contents then
+      -- entity -> leaf
+      ent.nodes[node]=true
+      -- leaf -> entity
+      if not node.ents then
+          node.ents={}
+      end
+      node.ents[ent]=true
+      return
+  end
+
+  -- classify box
+  local sides = plane_bbox(node.plane, pos, size)
+  -- sides or straddling?
+  if sides&1!=0 then
+    register_bbox(node[false], ent, pos, size)
+  end
+  if sides&2!=0 then
+    register_bbox(node[true], ent, pos, size)
+  end
+end
 
 -- find in what convex leaf origin is
 function find_sub_sector(node,origin)
@@ -1232,6 +1281,33 @@ function unpack_map()
     return planes[pi]*v[1]+planes[pi+1]*v[2]+planes[pi+2]*v[3]>d
   end
 
+  -- classify bbox against plane
+  plane_bbox=function(pi,c,e)
+    -- cf: https://gdbooks.gitbooks.io/3dcollisions/content/Chapter2/static_aabb_plane.html
+
+    local t,d,s,r=planes[pi+4],planes[pi+3]
+    if t<3 then
+        local n=planes[pi+t]
+        r = e[t+1]*abs(n)    
+        -- Compute distance of box center from plane
+        s = n*c[t+1] - d          
+    else
+        -- Compute the projection interval radius of b onto L(t) = b.c + t * p.n
+        local nx,ny,nz=planes[pi],planes[pi+1],planes[pi+2]
+        r = e[1]*abs(nx) + e[2]*abs(ny) + e[3]*abs(nz)
+    
+        -- Compute distance of box center from plane
+        s = nx*c[1]+ny*c[2]+nz*c[3] - d
+    end
+    -- Intersection occurs when distance s falls within [-r,+r] interval
+    if s<=-r then
+        return 1
+    elseif s>=r then
+        return 2
+    end
+    return 3  
+end,
+
   unpack_array(function()  
     -- coords
     unpack_vert(planes)
@@ -1459,7 +1535,7 @@ function unpack_map()
       end
     end)
   end)
-
+  
   -- checkpoints
   local checkpoints={}
   unpack_array(function(i)
@@ -1491,7 +1567,7 @@ function unpack_map()
     local function testEntityPosition(ent)
       printh("-------------------")
       local valid=true
-      for i,model in pairs(models) do
+      for i,model in inext,models do
         if model.solid then
           -- find if origin is not in solid space
           local is_valid=find_sub_sector(model.clipnodes,make_v(model.origin,ent.origin)).contents!=-2
