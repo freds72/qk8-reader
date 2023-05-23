@@ -124,6 +124,9 @@ __lua__
     f.write(cart)
 
 
+def v2_dot(a,b):
+  return a[0]*b[0] + a[1]*b[1]
+
 def pack_entities(entities, models):
   blob = ""
   # player start?
@@ -262,8 +265,11 @@ def pack_entities(entities, models):
     elif angle==-2:
       pos2.y-=extents.y-lip
     else:
-      # todo: support all angles
-      pos2.x+=extents.x-lip
+      c = math.cos(angle*math.pi/180)
+      s = math.sin(angle*math.pi/180)
+      scale = math.fabs(v2_dot((c,s),(extents.x,extents.z))) - lip
+      pos2.x += c * scale
+      pos2.z += s * scale          
 
     door_blob += pack_vec3(pos2)
 

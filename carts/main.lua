@@ -9,11 +9,11 @@ local plane_dot,plane_isfront,plane_get,plane_bbox
 local _maps,_texcoords={},{}
 
 -- maths & cam
-function lerp(a,b,t)
+local function lerp(a,b,t)
 	return a*(1-t)+b*t
 end
 
-function make_v(a,b)
+local function make_v(a,b)
 	return {
 		b[1]-a[1],
 		b[2]-a[2],
@@ -22,29 +22,29 @@ end
 function v_clone(v)
 	return {v[1],v[2],v[3]}
 end
-function v_dot(a,b)
+local function v_dot(a,b)
 	return a[1]*b[1]+a[2]*b[2]+a[3]*b[3]
 end
 -- returns scaled down dot, safe for overflow
-function v_dotsign(a,b)
+local function v_dotsign(a,b)
   local x0,y0,z0=a[1]>>4,a[2]>>4,a[3]>>4
   local x1,y1,z1=b[1]>>4,b[2]>>4,b[3]>>4
 	return x0*x1+y0*y1+z0*z1
 end
 
-function v_scale(v,scale)
+local function v_scale(v,scale)
 	v[1]*=scale
 	v[2]*=scale
 	v[3]*=scale
 end
-function v_add(v,dv,scale)
+local function v_add(v,dv,scale)
 	scale=scale or 1
 	return {
 		v[1]+scale*dv[1],
 		v[2]+scale*dv[2],
 		v[3]+scale*dv[3]}
 end
-function v_lerp(a,b,t,uv)
+local function v_lerp(a,b,t,uv)
   local ax,ay,az,u,v=a[1],a[2],a[3],a.u,a.v
 	return {
     ax+(b[1]-ax)*t,
@@ -78,12 +78,6 @@ function v_normz(v)
 end
 
 -- matrix functions
--- matrix vector multiply
-function m_x_v(m,v)
-	local x,y,z=v[1],v[2],v[3]
-	return {m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15]}
-end
-
 function make_m_from_euler(x,y,z)
 		local a,b = cos(x),-sin(x)
 		local c,d = cos(y),-sin(y)
@@ -98,17 +92,6 @@ function make_m_from_euler(x,y,z)
 	  0,0,0,1}
 end
 
-function make_m_look_at(up,fwd)
-	local right=v_normz(v_cross(up,fwd))
-	fwd=v_cross(right,up)
-	return {
-		right[1],right[2],right[3],0,
-		up[1],up[2],up[3],0,
-		fwd[1],fwd[2],fwd[3],0,
-		0,0,0,1
-	}
-end
-
 -- returns basis vectors from matrix
 function m_right(m)
 	return {m[1],m[2],m[3]}
@@ -118,24 +101,6 @@ function m_up(m)
 end
 function m_fwd(m)
 	return {m[9],m[10],m[11]}
-end
-function m_set_pos(m,v)
-	m[13]=v[1]
-	m[14]=v[2]
-	m[15]=v[3]
-end
-
--- optimized 4x4 matrix mulitply
-function m_x_m(a,b)
-	local a11,a12,a13,a21,a22,a23,a31,a32,a33=a[1],a[5],a[9],a[2],a[6],a[10],a[3],a[7],a[11]
-	local b11,b12,b13,b14,b21,b22,b23,b24,b31,b32,b33,b34=b[1],b[5],b[9],b[13],b[2],b[6],b[10],b[14],b[3],b[7],b[11],b[15]
-
-	return {
-			a11*b11+a12*b21+a13*b31,a21*b11+a22*b21+a23*b31,a31*b11+a32*b21+a33*b31,0,
-			a11*b12+a12*b22+a13*b32,a21*b12+a22*b22+a23*b32,a31*b12+a32*b22+a33*b32,0,
-			a11*b13+a12*b23+a13*b33,a21*b13+a22*b23+a23*b33,a31*b13+a32*b23+a33*b33,0,
-			a11*b14+a12*b24+a13*b34+a[13],a21*b14+a22*b24+a23*b34+a[14],a31*b14+a32*b24+a33*b34+a[15],1
-		}
 end
 
 -- print helper
@@ -190,12 +155,7 @@ function make_cam()
 			m[3],m[9]=m[9],m[3]
       m[7],m[10]=m[10],m[7]
       --
-      self.m=m_x_m(m,{
-        1,0,0,0,
-        0,1,0,0,
-        0,0,1,0,
-        -origin[1],-origin[2],-origin[3],1
-      })
+      self.m={unpack(m)}
       self.origin=origin
     end,
     collect_leaves=function(self,bsp,all_leaves)
@@ -232,10 +192,11 @@ function make_cam()
       return visleaves
     end,  
     draw_faces=function(self,verts,faces,leaves,lstart,lend,brushes)    
+      local cx,cy,cz=unpack(self.origin)
       local v_cache_class={        
         __index=function(self,vi)
-          local m,code,x,y,z=self.m,0,verts[vi],verts[vi+1],verts[vi+2]
-          local ax,ay,az=m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15]
+          local m,code,x,y,z=self.m,0,verts[vi]-cx,verts[vi+1]-cy,verts[vi+2]-cz
+          local ax,ay,az=m[1]*x+m[5]*y+m[9]*z,m[2]*x+m[6]*y+m[10]*z,m[3]*x+m[7]*y+m[11]*z
 
           -- znear=8
           if az<8 then code=2 end
@@ -349,64 +310,62 @@ function make_cam()
           local polys=brushes[leaf]
           if polys then
             -- cam origin in model space (eg. shifted)
-            local m,cam_pos=self.m,v_add(self.origin,brushes.model.origin,-1)
+            local m=self.m
             -- all "faces"
             for i,poly in inext,polys do                          
               -- dual sided or visible?
               local fi=poly.fi
               local fn,flags=faces[fi],faces[fi+2]
-              if plane_dot(fn,cam_pos)<faces[fi+1]!=(flags&1==0) then            
-                local pts,np,outcode,clipcode,uvi={},#poly,0xffff,0,faces[fi+5]
-                for k=1,np do
-                  -- base index in verts array
-                  local v=poly[k]
-                  local code,x,y,z=0,v[1],v[2],v[3]
-                  local ax,ay,az=m[1]*x+m[5]*y+m[9]*z+m[13],m[2]*x+m[6]*y+m[10]*z+m[14],m[3]*x+m[7]*y+m[11]*z+m[15]
-        
-                  -- znear=8
-                  if az<8 then code=2 end
-                  --if az>2048 then code|=1 end
-                  if ax>az then code|=4
-                  elseif ax<-az then code|=8 end
-                  if ay>az then code|=16
-                  elseif ay<-az then code|=32 end
-                  -- save world space coords for clipping
-                  -- to screen space
-                  local w=64/az
-                  pts[k]={ax,ay,az,u=v.u,v=v.v,x=63.5+ax*w,y=63.5-ay*w,w=w,outcode=code}
-                  outcode&=code
-                  clipcode+=code&2
-                end
-                if outcode==0 then 
-                  if(clipcode>0) pts,np=z_poly_clip(pts,np,uvi!=-1)
-                  if np>2 then
-                    if uvi!=-1 then
-                      ---- enable texture
-                      local mi=faces[fi+6]
-                      if flags&8==0 then
-                        -- regular texture
-                        -- global offset (using 0x8000 zone) + stride
-                        local texaddr=_maps[mi+1]
-                        poke(0x5f56,_maps[mi],(texaddr<<16)&0xff)
-                        poke4(0x5f38,texaddr)
-                      else
-                        -- lightmap
-                        -- reset starting point + stride
-                        poke(0x5f56,0x20,_maps[mi])
-                        -- reset texcoords
-                        poke4(0x5f38,0)
-                        poke4(0x2000,unpack(_maps[mi+1]))                  
-                      end
-
-                      local u,v=abs(plane_dot(fn,cam_u)),abs(plane_dot(fn,cam_v))
-                      if u>v then
-                        polytex_xmajor(pts,np,v)
-                      else
-                        polytex_ymajor(pts,np,u)
-                      end
-                    else                    
-                      polyfill(pts,np,0)            
+              local pts,np,outcode,clipcode,uvi={},#poly,0xffff,0,faces[fi+5]
+              for k=1,np do
+                -- base index in verts array
+                local v=poly[k]
+                local code,x,y,z=0,v[1]-cx,v[2]-cy,v[3]-cz
+                local ax,ay,az=m[1]*x+m[5]*y+m[9]*z,m[2]*x+m[6]*y+m[10]*z,m[3]*x+m[7]*y+m[11]*z
+      
+                -- znear=8
+                if az<8 then code=2 end
+                --if az>2048 then code|=1 end
+                if ax>az then code|=4
+                elseif ax<-az then code|=8 end
+                if ay>az then code|=16
+                elseif ay<-az then code|=32 end
+                -- save world space coords for clipping
+                -- to screen space
+                local w=64/az
+                pts[k]={ax,ay,az,u=v.u,v=v.v,x=63.5+ax*w,y=63.5-ay*w,w=w,outcode=code}
+                outcode&=code
+                clipcode+=code&2
+              end
+              if outcode==0 then 
+                if(clipcode>0) pts,np=z_poly_clip(pts,np,uvi!=-1)
+                if np>2 then
+                  if uvi!=-1 then
+                    ---- enable texture
+                    local mi=faces[fi+6]
+                    if flags&8==0 then
+                      -- regular texture
+                      -- global offset (using 0x8000 zone) + stride
+                      local texaddr=_maps[mi+1]
+                      poke(0x5f56,_maps[mi],(texaddr<<16)&0xff)
+                      poke4(0x5f38,texaddr)
+                    else
+                      -- lightmap
+                      -- reset starting point + stride
+                      poke(0x5f56,0x20,_maps[mi])
+                      -- reset texcoords
+                      poke4(0x5f38,0)
+                      poke4(0x2000,unpack(_maps[mi+1]))                  
                     end
+
+                    local u,v=abs(plane_dot(fn,cam_u)),abs(plane_dot(fn,cam_v))
+                    if u>v then
+                      polytex_xmajor(pts,np,v)
+                    else
+                      polytex_ymajor(pts,np,u)
+                    end
+                  else                    
+                    polyfill(pts,np,0)            
                   end
                 end
               end
@@ -516,7 +475,7 @@ function slide(ent,origin,velocity)
   local time_left,planes,wall,ground=1/30,{}
 
   -- check current to target origin
-  for i=1,4 do
+  for i=1,3 do
     -- try far target
     local next_pos=v_add(origin,velocity,time_left)
 
@@ -562,45 +521,45 @@ function slide(ent,origin,velocity)
 
     local i,np,new_vel=1,#planes,{}
     while i<=np do
-        -- adjust velocity
-        local n=planes[i]
-        local backoff=v_dot(original_velocity,n)        
-        for k,v in inext,original_velocity do
-            v-=n[k]*backoff
-            if v>-0.1 and v<0.1 then
-                v=0
-            end
-            new_vel[k]=v
-        end
+      -- adjust velocity
+      local n=planes[i]
+      local backoff=v_dot(original_velocity,n)        
+      for k,v in inext,original_velocity do
+          v-=n[k]*backoff
+          if v>-0.1 and v<0.1 then
+              v=0
+          end
+          new_vel[k]=v
+      end
 
-        local j=1
-        while j<=np do
-            if i~=j then
-                if v_dot(new_vel, planes[j])<0 then
-                  break
-                end
-            end
-            j+=1
-        end
-        if j>np then
-            break
-        end
-        i+=1
+      local j=1
+      while j<=np do
+          if i~=j then
+              if v_dot(new_vel, planes[j])<0 then
+                break
+              end
+          end
+          j+=1
+      end
+      if j>np then
+          break
+      end
+      i+=1
     end
     if i<=np then
         -- go along
         velocity=new_vel
     else
-        if np~=2 then
-            velocity={0,0,0}
-            break
-        end
-        -- "crease"
-        local dir=v_cross(planes[1],planes[2])
-        -- project velocity on it
-        v_scale(dir,v_dot(dir,velocity))
-        -- new velocity along crease!
-        velocity=dir
+      if np~=2 then
+          velocity={0,0,0}
+          break
+      end
+      -- "crease"
+      local dir=v_cross(planes[1],planes[2])
+      -- project velocity on it
+      v_scale(dir,v_dot(dir,velocity))
+      -- new velocity along crease!
+      velocity=dir
     end
 
     -- if original velocity is against the original velocity, stop dead
@@ -847,9 +806,9 @@ function ray_bsp_intersect(node,p0,p1,t0,t1,out)
   -- crossing a node
   local t=dist-node_dist
   if t<0 then
-    t+=0.03125
+    t+=0x0.03125
   else
-    t-=0.03125
+    t-=0x0.03125
   end  
   -- cliping fraction
   local frac=mid(t/(dist-otherdist),0,1)
@@ -1145,40 +1104,48 @@ end
 function _draw()
   cls(15)
   
-  local door=_bsps[2]
   -- _cam:draw_faces(door.verts,door.faces,_leaves,door.leaf_start,door.leaf_end)
 
   -- collect leaves with moving brushes
 
-  local out={model=door}
-  local brush_verts,verts,faces={},door.verts,door.faces
-  for j=door.leaf_start,door.leaf_end do
-    local leaf=_leaves[j]    
-    for i=1,#leaf do
-      -- face index
-      local fi=leaf[i]            
-      local poly,face_verts,uvi={fi=fi},faces[fi+3],faces[fi+5]
-      for k,vi in pairs(face_verts) do
-        local v=brush_verts[vi]
-        if not v then
-          -- "move" brush        
-          v=v_add({verts[vi],verts[vi+1],verts[vi+2]},door.origin)
-          brush_verts[vi]=v
+  local out={}
+  for i=2,#_bsps do
+    local door=_bsps[i]
+    if door.solid then
+      -- don't clip invisible places
+      local cam_pos=v_add(_cam.origin,door.origin,-1)           
+      local brush_verts,verts,faces={},door.verts,door.faces
+      for j=door.leaf_start,door.leaf_end do
+        local leaf=_leaves[j]    
+        for i=1,#leaf do
+          -- face index
+          local fi=leaf[i]            
+          local poly,face_verts,uvi={fi=fi},faces[fi+3],faces[fi+5]
+          local fn,flags=faces[fi],faces[fi+2]
+          if plane_dot(fn,cam_pos)<faces[fi+1]!=(flags&1==0) then 
+            for k,vi in pairs(face_verts) do
+              local v=brush_verts[vi]
+              if not v then
+                -- "move" brush        
+                v=v_add({verts[vi],verts[vi+1],verts[vi+2]},door.origin)
+                brush_verts[vi]=v
+              end
+              -- copy v
+              v={unpack(v)}
+              if uvi!=-1 then
+                local kuv=uvi+(k<<1)
+                v.u=_texcoords[kuv-1]
+                v.v=_texcoords[kuv]
+              end
+              add(poly,v)
+            end
+          end
+          -- clip against world
+          bsp_clip(_model.bsp,poly,out,uvi!=-1)
         end
-        -- copy v
-        v={unpack(v)}
-        if uvi!=-1 then
-          local kuv=uvi+(k<<1)
-          v.u=_texcoords[kuv-1]
-          v.v=_texcoords[kuv]
-        end
-        poly[k]=v
       end
-      -- clip against world
-      bsp_clip(_model.bsp,poly,out,uvi!=-1)
     end
   end
-
   local visleaves=_cam:collect_leaves(_model.bsp,_leaves)
   _cam:draw_faces(_model.verts,_model.faces,visleaves,1,#visleaves,out)
   
@@ -1271,6 +1238,9 @@ function unpack_map()
     if t<3 then    
       return planes[pi+t]*v[t+1],d
     end
+    -- local s0=(planes[pi]>>4)*(v[1]>>4)+(planes[pi+1]>>4)*(v[2]>>4)+(planes[pi+2]>>4)*(v[3]>>4)
+    --local s1=planes[pi]*v[1]+planes[pi+1]*v[2]+planes[pi+2]*v[3]
+    --assert(sgn(s0)==sgn(s1),s0.." "..s1)
     return planes[pi]*v[1]+planes[pi+1]*v[2]+planes[pi+2]*v[3],d
   end
   plane_isfront=function(pi,v)
@@ -1565,13 +1535,11 @@ end,
     local move=make_v(pos1,pos2)
     v_scale(move,1/30)
     local function testEntityPosition(ent)
-      printh("-------------------")
       local valid=true
       for i,model in inext,models do
         if model.solid then
           -- find if origin is not in solid space
           local is_valid=find_sub_sector(model.clipnodes,make_v(model.origin,ent.origin)).contents!=-2
-          printh("bsp: "..i..": "..tostr(is_valid))
           valid=valid and is_valid
         end
       end
@@ -1582,7 +1550,6 @@ end,
       -- avoid reentrancy
       if(triggered) return
       triggered=true
-      printh("touched door")
       do_async(function()
         while true do
           -- todo: include speed
@@ -1611,7 +1578,6 @@ end,
               ]]
               -- see if the ent's bbox is inside the pusher's final position
               if testEntityPosition(check) then
-                printh("Player in path but clear")
                 goto continue
               end
             end
@@ -1622,7 +1588,6 @@ end,
             -- printh("moving "..check.classname.." from: "..v_tostring(moved[check]).." to: "..v_tostring(check.origin))
             
             if testEntityPosition(check) then
-              printh(">>pushed")
               goto continue
             end
 
@@ -1630,12 +1595,10 @@ end,
             -- occurs when entity blocked by something else
             check.origin = old_orig
             if testEntityPosition(check) then
-              printh("**blocked")
               goto continue
             end
 
             -- failed move
-            printh("!!!! rollback move !!!")
             pusher.origin = pushorig
 
             -- if the pusher has a "blocked" function, call it
