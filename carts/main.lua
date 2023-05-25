@@ -732,7 +732,7 @@ end
 -->8
 -- bsp functions
 
-function pvs_register(ent)
+function pvs_register(node,ent)
   -- refresh attributes linked to origin
   ent.absmins=v_add(ent.origin,ent.mins)
   ent.absmaxs=v_add(ent.origin,ent.maxs)
@@ -755,7 +755,7 @@ function pvs_register(ent)
 
   -- register in visible world (e.g. PVS)
   ent.clip_node=nil
-  register_bbox(_model.bsp, ent, c, make_v(c, maxs))
+  register_bbox(node, ent, c, make_v(c, maxs))
 end
 
 function register_bbox(node, ent, pos, size)    
@@ -902,13 +902,15 @@ function start_state(origin,angle)
   _cam=make_cam()
   _plyr=make_player(origin,angle)
 
-  pvs_register({
-    nodes={},
-    mins={0,0,0},
-    maxs={16,16,16},
-    origin=v_add(_plyr.origin,{0,0,0}),
-    spr=64
-  })
+  -- test
+  pvs_register(
+    _model.bsp,{
+      nodes={},
+      mins={0,0,0},
+      maxs={16,16,16},
+      origin=v_add(_plyr.origin,{0,0,0}),
+      spr=64
+    })
 
   return
     -- draw
@@ -1035,7 +1037,7 @@ function time_tostr(t)
 end
 
 function _draw()
-  -- cls(15)
+  cls()
   
   -- _cam:draw_faces(door.verts,door.faces,_leaves,door.leaf_start,door.leaf_end)
 
@@ -1440,7 +1442,12 @@ end,
   -- doors
   unpack_array(function()
     -- standard triggers parameters
-    local flags,pusher,wait,speed,mins,maxs,pos1,pos2,triggered=mpeek(),unpack_ref(models),unpack_variant(),unpack_variant(),unpack_vert(),unpack_vert(),unpack_vert(),unpack_vert()
+    local flags,pusher,wait,speed,mins,maxs,pos1,pos2,triggered=mpeek(),unpack_ref(models),unpack_variant(),unpack_variant(),unpack_vert(),unpack_vert(),unpack_vert(),unpack_vert()    
+    pusher.mins=mins
+    pusher.maxs=maxs
+    pusher.nodes={}
+
+    pvs_register(models[1].bsp,pusher)
     local move=make_v(pos1,pos2)
     v_scale(move,1/30)
     local function testEntityPosition(ent)
@@ -1519,6 +1526,7 @@ end,
 ::continue::
             -- pusher can move, increment local time
             i+=1
+            pvs_register(models[1].bsp,pusher)
 ::blocked::
             yield()
           end
