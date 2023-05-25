@@ -305,21 +305,40 @@ function make_cam()
             end
           end
         end
-        
+        if leaf.ents then
+          palt(15,true)
+          pal(0,7)
+          palt(0,false)
+          for k,v in pairs(leaf.ents) do
+            local code,x,y,z=0,k.origin[1]-cx,k.origin[2]-cy,k.origin[3]-cz
+            local ax,ay,az=m[1]*x+m[5]*y+m[9]*z,m[2]*x+m[6]*y+m[10]*z,m[3]*x+m[7]*y+m[11]*z
+              -- znear=8
+            if az<8 then code=2 end
+            -- save world space coords for clipping
+            -- to screen space
+            if code==0 then
+              local w=64/az
+              local x,y=63.5+ax*w,63.5-ay*w
+              w*=64
+              local ratio=42/96
+              sspr(0,32,42,96,x-ratio*w/2,y-w/2,ratio*w,w)            
+              pset(x,y,9)
+            end
+          end
+          palt()
+        end
         if brushes then
           local polys=brushes[leaf]
           if polys then
-            -- cam origin in model space (eg. shifted)
-            local m=self.m
-            -- all "faces"
+            -- all "faces" (already visible)
             for i,poly in inext,polys do                          
               -- dual sided or visible?
               local fi=poly.fi
-              local fn,flags=faces[fi],faces[fi+2]
-              local pts,np,outcode,clipcode,uvi={},#poly,0xffff,0,faces[fi+5]
+              local np,outcode,clipcode,uvi,fn,flags=#poly,0xffff,0,faces[fi+5],faces[fi],faces[fi+2]
               for k=1,np do
                 -- base index in verts array
                 local v=poly[k]
+                -- note: no caching as clipped brush vertices are unique
                 local code,x,y,z=0,v[1]-cx,v[2]-cy,v[3]-cz
                 local ax,ay,az=m[1]*x+m[5]*y+m[9]*z,m[2]*x+m[6]*y+m[10]*z,m[3]*x+m[7]*y+m[11]*z
       
@@ -341,7 +360,7 @@ function make_cam()
                 if(clipcode>0) pts,np=z_poly_clip(pts,np,uvi!=-1)
                 if np>2 then
                   if uvi!=-1 then
-                    ---- enable texture
+                    -- enable texture
                     local mi=faces[fi+6]
                     if flags&8==0 then
                       -- regular texture
@@ -729,12 +748,13 @@ function pvs_register(ent)
   -- register new location
   local mins,maxs=ent.absmins,ent.absmaxs
   local c={
-      0.5*(mins[1]+maxs[1]),
-      0.5*(mins[2]+maxs[2]),
-      0.5*(mins[3]+maxs[3])
+      (mins[1]+maxs[1])>>1,
+      (mins[2]+maxs[2])>>1,
+      (mins[3]+maxs[3])>>1
   }
 
   -- register in visible world (e.g. PVS)
+  ent.clip_node=nil
   register_bbox(_model.bsp, ent, c, make_v(c, maxs))
 end
 
@@ -757,6 +777,10 @@ function register_bbox(node, ent, pos, size)
 
   -- classify box
   local sides = plane_bbox(node.plane, pos, size)
+  -- capture first clipping node (for moving brushes)
+  if not ent.first_node and sides&3!=0 then
+    ent.first_node=node
+  end
   -- sides or straddling?
   if sides&1!=0 then
     register_bbox(node[false], ent, pos, size)
@@ -806,9 +830,9 @@ function ray_bsp_intersect(node,p0,p1,t0,t1,out)
   -- crossing a node
   local t=dist-node_dist
   if t<0 then
-    t+=0x0.03125
+    t+=0.03125
   else
-    t-=0x0.03125
+    t-=0.03125
   end  
   -- cliping fraction
   local frac=mid(t/(dist-otherdist),0,1)
@@ -877,6 +901,15 @@ end
 function start_state(origin,angle)
   _cam=make_cam()
   _plyr=make_player(origin,angle)
+
+  pvs_register({
+    nodes={},
+    mins={0,0,0},
+    maxs={16,16,16},
+    origin=v_add(_plyr.origin,{0,0,0}),
+    spr=64
+  })
+
   return
     -- draw
     function()
@@ -887,120 +920,28 @@ function start_state(origin,angle)
     end
 end
 
-function play_state(origin,angle,checkpoints)
+function play_state(origin,angle)
   _cam=make_cam()
   _plyr=make_player(origin,angle)
-
-	-- previous laps
-	-- active index
-	local laps,checkpoint={},checkpoints[checkpoints.first].next
-	-- remaining time before game over (+ some buffer time)
-	local lap_t,total_t,remaining_t,best_t,best_i=0,0,30*checkpoints.ttl,32000,1
-
-  -- display counters
-  local extend_time_t,start_ttl,go_ttl=0,90,120
 
 	return
 		-- draw
 		function()
-			printb("time",2,2,6,1)
-      -- fat font
-      poke(0x5f58, 0x8d)
-			printb(padding(ceil(remaining_t/30)),2,9,11,1)
-      poke(0x5f58, 0x81)
-
-			-- 1/2/3...
-			if start_ttl>0 then
-				local sx=flr(start_ttl/30)+1
-				printb(sx,nil,48,12,1)
-			end
-
-			-- blink go!
-			if(go_ttl>0 and go_ttl<30 and go_ttl%4<2) printb("go!",nil,48,13,1)
-
-			-- extend time message
-			if(extend_time_t>0 and extend_time_t%16<8) printb("time extended!",24,96,13,0)
-			
-			-- previous times
-			printb("lap time",72,2,6,1)
-			local y=9
-			for i=1,#laps do
-				printb(i,64,y,10,0)
-				printb(laps[i],72,y,best_i==i and 14 or 7,0)
-				y+=7
-			end
-			printb(#laps+1,64,y,9,0)
-			printb(time_tostr(lap_t),72,y,4,0)
 		end,
 		-- update
 		function()
-			go_ttl-=1
-			extend_time_t-=1
-
-			if start_ttl>0 then
-				if(start_ttl%30==0) sfx(2)
-				start_ttl-=1
-				if(start_ttl<0) sfx(3)
-			else
-				total_t+=1
-				remaining_t-=1
-				lap_t+=1
-			end
-
-			if remaining_t==0 then
-				next_state(gameover_state,false,total_t)
+			if false then
+				next_state(gameover_state)
 				return
 			end
 
-      -- active track?
-      local hit = find_sub_sector(checkpoints[checkpoint].model.clipnodes,_plyr.origin)
-      -- inside volume?        
-      if hit and hit.contents==-2 then
-        checkpoint=checkpoints[checkpoint].next
-        remaining_t+=30*checkpoints[checkpoint].bonus
-        -- message display time
-        extend_time_t=30*3
-
-        -- time extension!
-        music(extended_time_music)
-        -- placeholder
-        sfx(4)
-        
-        -- closed lap?
-        if checkpoint==checkpoints.first then
-          -- record time
-          add(laps,time_tostr(lap_t))
-          if lap_t<best_t then
-            best_t=lap_t
-            best_i=#laps
-
-            -- best lap music
-            music(best_lap_music)
-          end
-          -- done?
-          if #laps==3 then
-            next_state(gameover_state,true,total_t)
-          end
-          -- next lap
-          lap_t=0
-        end
-      end    
-
-			if(start_ttl==0) _plyr:control()	
+      _plyr:control()	
 		end
 end
 
 function gameover_state(win,total_t)
-  -- todo: allocate "track" ID for saving
-	local ttl,angle,prev_best_t=900,-0.5,dget(0)	
-	--  or record?
-	local is_record=win and (total_t<prev_best_t or prev_best_t==0)
-	if is_record then
-		-- save new record
-		dset(0,total_t)
-	end
 	-- record initial button state (avoid auto-skip screen)
-	local last_btn,btn_press=btn(4),0
+	local ttl,last_btn,btn_press=90,btn(4),0
 
 	music(gameover_music)
 
@@ -1008,9 +949,6 @@ function gameover_state(win,total_t)
 		-- draw
 		function()
       if win then
-  			-- total time
-	  		printb(time_tostr(total_t).." total time",nil,8,9)
-		  	if(is_record) printb("track record!",nil,17,8,2)
       end
 
 			-- 
@@ -1022,7 +960,6 @@ function gameover_state(win,total_t)
 		-- update
 		function()
 			ttl-=1
-			angle+=0.01
 
 			if btn(4)!=last_btn then
 				btn_press+=1
@@ -1030,7 +967,7 @@ function gameover_state(win,total_t)
 			end
 
 			if btn_press>1 or ttl<0 then
-				next_state(play_state,_start_pos,_start_angle,_checkpoints)
+				next_state(play_state,_start_pos,_start_angle)
 			elseif btnp(5) then
 				-- back to selection title
 				load("qk.p8")
@@ -1063,11 +1000,7 @@ function _init()
   --pal({129, 133, 5, 134, 143, 15, 130, 132, 4, 137, 9, 136, 8, 13, 12},1,1)
 
   -- start level or game level?
-  if #_checkpoints>0 then
-    next_state(play_state,_start_pos,_start_angle,_checkpoints)
-  else
-    next_state(start_state,_start_pos,_start_angle)
-  end
+  next_state(start_state,_start_pos,_start_angle)
 end
 
 function _update()
@@ -1102,7 +1035,7 @@ function time_tostr(t)
 end
 
 function _draw()
-  cls(15)
+  -- cls(15)
   
   -- _cam:draw_faces(door.verts,door.faces,_leaves,door.leaf_start,door.leaf_end)
 
@@ -1113,31 +1046,31 @@ function _draw()
     local door=_bsps[i]
     if door.solid then
       -- don't clip invisible places
-      local cam_pos=v_add(_cam.origin,door.origin,-1)           
-      local brush_verts,verts,faces={},door.verts,door.faces
+      local cam_pos,door_pos,verts,faces=v_add(_cam.origin,door.origin,-1),door.origin,door.verts,door.faces   
+      local brush_verts=setmetatable({},{__index=function(t,vi)
+        -- "move" brush        
+        local v=v_add({verts[vi],verts[vi+1],verts[vi+2]},door_pos)
+        t[vi]=v
+        return v
+      end})
       for j=door.leaf_start,door.leaf_end do
         local leaf=_leaves[j]    
         for i=1,#leaf do
           -- face index
           local fi=leaf[i]            
-          local poly,face_verts,uvi={fi=fi},faces[fi+3],faces[fi+5]
-          local fn,flags=faces[fi],faces[fi+2]
-          if plane_dot(fn,cam_pos)<faces[fi+1]!=(flags&1==0) then 
-            for k,vi in pairs(face_verts) do
+          local poly,face_verts,uvi,fn={fi=fi},faces[fi+3],faces[fi+5],faces[fi]
+          -- clip only visible faces
+          if plane_dot(fn,cam_pos)<faces[fi+1]!=(faces[fi+2]&1==0) then 
+            for k,vi in inext,face_verts do
               local v=brush_verts[vi]
-              if not v then
-                -- "move" brush        
-                v=v_add({verts[vi],verts[vi+1],verts[vi+2]},door.origin)
-                brush_verts[vi]=v
-              end
               -- copy v
-              v={unpack(v)}
+              v={v[1],v[2],v[3]}
               if uvi!=-1 then
                 local kuv=uvi+(k<<1)
                 v.u=_texcoords[kuv-1]
                 v.v=_texcoords[kuv]
               end
-              add(poly,v)
+              poly[k]=v
             end
           end
           -- clip against world
@@ -1559,11 +1492,10 @@ end,
             -- move the pusher to it's final position
             pusher.origin = v_add(pusher.origin,move)
       
-            -- only conflicting entity: player!!
-            local check,old_orig=_plyr
+            local old_orig
          
             -- if the entity is standing on the pusher, it will definitely be moved
-            if check.ground ~= pusher then
+            if _plyr.ground ~= pusher then
               --[[
               -- outside of move box?
               if check.absmins[1] >= maxs[1]
@@ -1577,24 +1509,24 @@ end,
               end
               ]]
               -- see if the ent's bbox is inside the pusher's final position
-              if testEntityPosition(check) then
+              if testEntityPosition(_plyr) then
                 goto continue
               end
             end
 
             -- try moving the contacted entity 
-            old_orig=v_clone(check.origin)
-            check.origin = v_add(check.origin, move)
+            old_orig=v_clone(_plyr.origin)
+            _plyr.origin = v_add(_plyr.origin, move)
             -- printh("moving "..check.classname.." from: "..v_tostring(moved[check]).." to: "..v_tostring(check.origin))
             
-            if testEntityPosition(check) then
+            if testEntityPosition(_plyr) then
               goto continue
             end
 
             -- if it is ok to leave in the old position, do it
             -- occurs when entity blocked by something else
-            check.origin = old_orig
-            if testEntityPosition(check) then
+            _plyr.origin = old_orig
+            if testEntityPosition(_plyr) then
               goto continue
             end
 
@@ -1606,10 +1538,10 @@ end,
             -- vm:call(pusher,"blocked", check)
             
             -- move back any entities we already moved
-            check.origin = old_orig
+            _plyr.origin = old_orig
             goto blocked
 ::continue::
-            -- pusher can move
+            -- pusher can move, increment local time
             i+=1
 ::blocked::
             yield()
