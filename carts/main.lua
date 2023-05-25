@@ -988,7 +988,7 @@ function _init()
   poke(0x5f2d,7)
 
   -- unpack map
-  _bsps,_leaves,_checkpoints,_start_pos,_start_angle=decompress("q8k",0,0,unpack_map)
+  _bsps,_leaves,_start_pos,_start_angle=decompress("q8k",0,0,unpack_map)
   _model=_bsps[1]
   -- restore spritesheet
   reload()
@@ -1171,9 +1171,6 @@ function unpack_map()
     if t<3 then    
       return planes[pi+t]*v[t+1],d
     end
-    -- local s0=(planes[pi]>>4)*(v[1]>>4)+(planes[pi+1]>>4)*(v[2]>>4)+(planes[pi+2]>>4)*(v[3]>>4)
-    --local s1=planes[pi]*v[1]+planes[pi+1]*v[2]+planes[pi+2]*v[3]
-    --assert(sgn(s0)==sgn(s1),s0.." "..s1)
     return planes[pi]*v[1]+planes[pi+1]*v[2]+planes[pi+2]*v[3],d
   end
   plane_isfront=function(pi,v)
@@ -1190,23 +1187,23 @@ function unpack_map()
 
     local t,d,s,r=planes[pi+4],planes[pi+3]
     if t<3 then
-        local n=planes[pi+t]
-        r = e[t+1]*abs(n)    
-        -- Compute distance of box center from plane
-        s = n*c[t+1] - d          
+      local n=planes[pi+t]
+      r = e[t+1]*abs(n)    
+      -- Compute distance of box center from plane
+      s = n*c[t+1] - d          
     else
-        -- Compute the projection interval radius of b onto L(t) = b.c + t * p.n
-        local nx,ny,nz=planes[pi],planes[pi+1],planes[pi+2]
-        r = e[1]*abs(nx) + e[2]*abs(ny) + e[3]*abs(nz)
-    
-        -- Compute distance of box center from plane
-        s = nx*c[1]+ny*c[2]+nz*c[3] - d
+      -- Compute the projection interval radius of b onto L(t) = b.c + t * p.n
+      local nx,ny,nz=planes[pi],planes[pi+1],planes[pi+2]
+      r = e[1]*abs(nx) + e[2]*abs(ny) + e[3]*abs(nz)
+  
+      -- Compute distance of box center from plane
+      s = nx*c[1]+ny*c[2]+nz*c[3] - d
     end
     -- Intersection occurs when distance s falls within [-r,+r] interval
     if s<=-r then
-        return 1
+      return 1
     elseif s>=r then
-        return 2
+      return 2
     end
     return 3  
 end,
@@ -1332,6 +1329,7 @@ end,
   for _,node in pairs(nodes) do
     local function attach_node(side,leaf)
       local refs=leaf and leaves or nodes
+      -- make sure contents is always set
       local child=refs[node[side]] or {contents=-2}
       node[side]=child
       -- used to optimize bsp traversal for rendering
@@ -1438,33 +1436,11 @@ end,
       end
     end)
   end)
-  
-  -- checkpoints
-  local checkpoints={}
-  unpack_array(function(i)
-    -- standard triggers parameters
-    local flags,model=mpeek(),unpack_ref(models)
-    -- triggers are not solid
-    model.solid=nil
-
-    -- reference to next target
-    add(checkpoints,{
-      model=model,
-      next=unpack_variant(),
-      bonus=unpack_variant()
-    })
-    -- starting point?
-    if flags&1!=0 then
-      checkpoints.first=i
-      -- initial track time
-      checkpoints.ttl=unpack_variant()
-    end
-  end)
 
   -- doors
   unpack_array(function()
     -- standard triggers parameters
-    local flags,pusher,wait,speed,pos1,pos2,triggered=mpeek(),unpack_ref(models),unpack_variant(),unpack_variant(),unpack_vert(),unpack_vert()
+    local flags,pusher,wait,speed,mins,maxs,pos1,pos2,triggered=mpeek(),unpack_ref(models),unpack_variant(),unpack_variant(),unpack_vert(),unpack_vert(),unpack_vert(),unpack_vert()
     local move=make_v(pos1,pos2)
     v_scale(move,1/30)
     local function testEntityPosition(ent)
@@ -1561,5 +1537,5 @@ end,
     end
   end)
 
-  return models,leaves,checkpoints,plyr_pos,plyr_angle
+  return models,leaves,plyr_pos,plyr_angle
 end
