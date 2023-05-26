@@ -189,7 +189,7 @@ function make_cam()
           thing.visleaf=leaf
         end
       end
-      return visleaves
+      return visleaves,visframe
     end,  
     draw_faces=function(self,verts,faces,leaves,lstart,lend,brushes)    
       local cx,cy,cz=unpack(self.origin)
@@ -325,7 +325,9 @@ function make_cam()
               pset(x,y,9)
             end
           end
+          pal()
           palt()
+          palt(0,false)
         end
         if brushes then
           local polys=brushes[leaf]
@@ -772,6 +774,9 @@ function register_bbox(node, ent, pos, size)
           node.ents={}
       end
       node.ents[ent]=true
+      -- fallback?
+      
+      if(not ent.first_node) printh("fallback node - no clipping needed") ent.first_node=node
       return
   end
 
@@ -779,6 +784,7 @@ function register_bbox(node, ent, pos, size)
   local sides = plane_bbox(node.plane, pos, size)
   -- capture first clipping node (for moving brushes)
   if not ent.first_node and sides&3!=0 then
+    printh("first clipping node")
     ent.first_node=node
   end
   -- sides or straddling?
@@ -788,6 +794,7 @@ function register_bbox(node, ent, pos, size)
   if sides&2!=0 then
     register_bbox(node[true], ent, pos, size)
   end
+
 end
 
 -- find in what convex leaf origin is
@@ -1042,11 +1049,13 @@ function _draw()
   -- _cam:draw_faces(door.verts,door.faces,_leaves,door.leaf_start,door.leaf_end)
 
   -- collect leaves with moving brushes
+  local visleaves,visframe=_cam:collect_leaves(_model.bsp,_leaves)
 
   local out={}
   for i=2,#_bsps do
     local door=_bsps[i]
-    if door.solid then
+    -- does the brush belong to a visible node?
+    if door.solid and door.first_node and door.first_node.visframe==visframe then
       -- don't clip invisible places
       local cam_pos,door_pos,verts,faces=v_add(_cam.origin,door.origin,-1),door.origin,door.verts,door.faces   
       local brush_verts=setmetatable({},{__index=function(t,vi)
@@ -1057,12 +1066,12 @@ function _draw()
       end})
       for j=door.leaf_start,door.leaf_end do
         local leaf=_leaves[j]    
-        for i=1,#leaf do
-          -- face index
-          local fi=leaf[i]            
-          local poly,face_verts,uvi,fn={fi=fi},faces[fi+3],faces[fi+5],faces[fi]
+        -- face index
+        for i,fi in inext,leaf do
+          local fn=faces[fi]
           -- clip only visible faces
           if plane_dot(fn,cam_pos)<faces[fi+1]!=(faces[fi+2]&1==0) then 
+            local poly,face_verts,uvi={fi=fi},faces[fi+3],faces[fi+5]
             for k,vi in inext,face_verts do
               local v=brush_verts[vi]
               -- copy v
@@ -1074,14 +1083,14 @@ function _draw()
               end
               poly[k]=v
             end
+            -- clip against world
+            bsp_clip(door.first_node,poly,out,uvi!=-1)
           end
-          -- clip against world
-          bsp_clip(_model.bsp,poly,out,uvi!=-1)
         end
       end
     end
   end
-  local visleaves=_cam:collect_leaves(_model.bsp,_leaves)
+
   _cam:draw_faces(_model.verts,_model.faces,visleaves,1,#visleaves,out)
   
   draw_state()
@@ -1448,6 +1457,7 @@ end,
     pusher.nodes={}
 
     pvs_register(models[1].bsp,pusher)
+
     local move=make_v(pos1,pos2)
     v_scale(move,1/30)
     local function testEntityPosition(ent)
