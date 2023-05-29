@@ -329,9 +329,7 @@ function make_cam()
               -- dual sided or visible?
               local fi=poly.fi
               local np,outcode,clipcode,uvi,fn,flags=#poly,0xffff,0,faces[fi+5],faces[fi],faces[fi+2]
-              for k=1,np do
-                -- base index in verts array
-                local v=poly[k]
+              for k,v in inext,poly do
                 -- note: no caching as clipped brush vertices are unique
                 local code,x,y,z=0,v[1]-cx,v[2]-cy,v[3]-cz
                 local ax,ay,az=m[1]*x+m[5]*y+m[9]*z,m[2]*x+m[6]*y+m[10]*z,m[3]*x+m[7]*y+m[11]*z
