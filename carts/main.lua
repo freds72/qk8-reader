@@ -756,7 +756,7 @@ function pvs_register(node,ent)
   }
 
   -- register in visible world (e.g. PVS)
-  ent.clip_node=nil
+  ent.first_node=nil
   register_bbox(node, ent, c, make_v(c, maxs))
 end
 
@@ -776,7 +776,7 @@ function register_bbox(node, ent, pos, size)
       node.ents[ent]=true
       -- fallback?
       
-      if(not ent.first_node) printh("fallback node - no clipping needed") ent.first_node=node
+      if(not ent.first_node) ent.first_node=node
       return
   end
 
@@ -784,7 +784,6 @@ function register_bbox(node, ent, pos, size)
   local sides = plane_bbox(node.plane, pos, size)
   -- capture first clipping node (for moving brushes)
   if not ent.first_node and sides&3!=0 then
-    printh("first clipping node")
     ent.first_node=node
   end
   -- sides or straddling?
@@ -905,7 +904,7 @@ function next_state(state,...)
 	draw_state,update_state=state(...)
 end
 
-function start_state(origin,angle)
+function play_state(origin,angle)
   _cam=make_cam()
   _plyr=make_player(origin,angle)
 
@@ -918,20 +917,6 @@ function start_state(origin,angle)
       origin=v_add(_plyr.origin,{0,0,0}),
       spr=64
     })
-
-  return
-    -- draw
-    function()
-    end,
-    -- update
-    function()
-			_plyr:control()	
-    end
-end
-
-function play_state(origin,angle)
-  _cam=make_cam()
-  _plyr=make_player(origin,angle)
 
 	return
 		-- draw
@@ -1008,8 +993,8 @@ function _init()
   palt(0,false)
   --pal({129, 133, 5, 134, 143, 15, 130, 132, 4, 137, 9, 136, 8, 13, 12},1,1)
 
-  -- start level or game level?
-  next_state(start_state,_start_pos,_start_angle)
+  -- start level
+  next_state(play_state,_start_pos,_start_angle)
 end
 
 function _update()
@@ -1099,6 +1084,7 @@ function _draw()
 
   -- set screen palette (color ramp 8 is neutral)
   memcpy(0x5f10,0x4300+16*8,16)
+  print(flr(stat(0)).."kB",2,2,7)
 end
 
 -->8
@@ -1157,11 +1143,8 @@ function unpack_map()
   local verts,planes,faces,leaves,nodes,models,uvs,clipnodes={},{},{},{},{},{},{},{}
   
   printh("------------------------")
-  -- hw colors (16 * 16 colors)
-  for i=0x4300,0x43ff do
-    poke(i,mpeek())
-  end
-  for i=0x4400,0x44ff do
+  -- hw colors (16 * 16 colors) + palettes
+  for i=0x4300,0x44ff do
     poke(i,mpeek())
   end
 
