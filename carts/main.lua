@@ -223,9 +223,7 @@ function make_cam()
       for j=lstart,lend do
         local leaf=leaves[j]
         -- faces form a convex space, render in any order        
-        for i=1,#leaf do
-          -- face index
-          local fi=leaf[i]            
+        for i,fi in inext,leaf do
           -- face normal          
           local fn,flags=faces[fi],faces[fi+2]
           -- skip skies
@@ -428,8 +426,8 @@ function poly_uv_clip(node,v,uvs)
   -- degenerate case
   if(#v<3) return {},{}
   local dists,side={},0
-  for i=1,#v do
-    local d,dist=plane_dot(node.plane,v[i])  
+  for i,p in inext,v do
+    local d,dist=plane_dot(node.plane,p)  
     d-=dist
     side|=d>0 and 1 or 2
     dists[i]=d
@@ -440,8 +438,8 @@ function poly_uv_clip(node,v,uvs)
   -- straddling
   -- copy original face index
 	local res,out_res,v0,d0={fi=v.fi},{fi=v.fi},v[#v],dists[#v]
-	for i=1,#v do
-		local v1,d1=v[i],dists[i]
+	for i,v1 in inext,v do
+		local d1=dists[i]
     if d0<=0 then
       add(out_res,v0,1)
     end
