@@ -183,12 +183,6 @@ function make_cam()
       -- collect convex spaces back to front
       visleaves={}
       collect_bsp(bsp,self.origin)
-      -- for all things on each leaves, pick closest leaf
-      for leaf in all(visleaves) do
-        for thing in pairs(leaf.things) do
-          thing.visleaf=leaf
-        end
-      end
       return visleaves,visframe
     end,  
     draw_faces=function(self,verts,faces,leaves,lstart,lend,brushes)    
